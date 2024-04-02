@@ -22,8 +22,8 @@ The following example scripts will work for any urban site:
  
 The following folders are an example test site (Melbourne, Australia) with annual data.
 
-- **/input_file/Input_2d/d_**: text files with site characteristic information
-- **/input_file/Input_2d/w_**: meteorological forcing data in .txt format (1 year data)
+- **/input_file/Input_2d/d_ **: text files with site characteristic information
+- **/input_file/Input_2d/w_ **: meteorological forcing data in .txt format (1 year data)
 
 Instructions
 ------------
@@ -46,7 +46,7 @@ ERA5 hourly data on single levels from 1940 to present
 - 8- Surface pressure (Pa)
 - 9- Total precipitation (m)
 
-- Urban Canopy Parameters (UCPs)
+Urban Canopy Parameters (UCPs)
 If available, the following urban morphological parameters can be used to appropriately 
 describe the geometry of the urban fabric. If not available, tabulated values may be used. 
 
