@@ -22,40 +22,40 @@ The following example scripts will work for any urban site:
  
 The following folders are an example test site (Melbourne, Australia) with annual data.
 
-- **/input_file/Input_2d/d_* **: text files with site characteristic information
-- **/input_file/Input_2d/w_* **: meteorological forcing data in .txt format (1 year data)
+- **/input_file/Input_2d/d_**: text files with site characteristic information
+- **/input_file/Input_2d/w_**: meteorological forcing data in .txt format (1 year data)
 
 Instructions
 ------------
-- Meteorological forcings
+Meteorological forcings
 You can download data from https://cds.climate.copernicus.eu/ to force the model, or from 
 observation data or other climate models. 
 The details of the forcings variables are listed below, and we recommend taking them from the 
 following ERA5 datasets: 
 
 ERA5 hourly data on pressure levels from 1940 to present (1000hPa)
-1- Specific humidity (kg kg-1)
-2- Temperature (K)
-3- U-component of wind (m s-1)
-4- V-component of wind (m s-1)
+- 1- Specific humidity (kg kg-1)
+- 2- Temperature (K)
+- 3- U-component of wind (m s-1)
+- 4- V-component of wind (m s-1)
 
 ERA5 hourly data on single levels from 1940 to present
-5- Surface direct short-wave radiation flux  (W m-2)
-6- Surface downward long-wave radiation flux  (W m-2)
-7- Surface downward short-wave radiation flux (W m-2)
-8- Surface pressure (Pa)
-9- Total precipitation (m)
+- 5- Surface direct short-wave radiation flux  (W m-2)
+- 6- Surface downward long-wave radiation flux  (W m-2)
+- 7- Surface downward short-wave radiation flux (W m-2)
+- 8- Surface pressure (Pa)
+- 9- Total precipitation (m)
 
--Urban Canopy Parameters (UCPs)
+- Urban Canopy Parameters (UCPs)
 If available, the following urban morphological parameters can be used to appropriately 
 describe the geometry of the urban fabric. If not available, tabulated values may be used. 
 
-λu - Fraction of urban land use (1)
-Ps - Pervious surface fraction (1)
-λp - Roof area fraction (1)
-Hm - Building mean height (m)
-λb - Wall to plan area ratio (m)
-hi – Distribution of building height (m) 
+- λu - Fraction of urban land use (1)
+- Ps - Pervious surface fraction (1)
+- λp - Roof area fraction (1)
+- Hm - Building mean height (m)
+- λb - Wall to plan area ratio (m)
+- hi – Distribution of building height (m) 
 
 To produce a simulation with BEP+BEM Offline, run the code: 
 
