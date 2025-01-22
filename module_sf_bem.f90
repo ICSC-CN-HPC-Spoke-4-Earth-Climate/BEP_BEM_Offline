@@ -43,9 +43,6 @@ MODULE module_sf_bem
      		       hsout,hlout,consump,eppv,tpv,hsvent,hlvent,hfgr,&
                        tr_av,tpv_print,sfpv,sfr_indoor)
 
-
-
-
 ! ---------------------------------------------------------------------
 	implicit none
 	
@@ -96,7 +93,7 @@ MODULE module_sf_bem
 
 	real dt				!time step [s]
                                        
-           integer nzcanm                  !Maximum number of vertical levels in the urban grid
+        integer nzcanm                  !Maximum number of vertical levels in the urban grid
 	integer nlev			!number of floors in the building
 	integer nwal                    !number of levels inside the wall
 	integer nrof                    !number of levels inside the roof
@@ -248,8 +245,10 @@ MODULE module_sf_bem
 !--------------------------------------------
 !Initialization
 !--------------------------------------------
-       !WRITE(*,*) "start BEM subroutine"	!_gl
-        do ilev=1,nzcanm
+       !WRITE(*,*) "start BEM subroutine ==============================================="	!_gl
+       !WRITE(*,*) "krof, csrof", krof, csrof
+ 
+       do ilev=1,nzcanm
           hseqocc(ilev)=0.
           hleqocc(ilev)=0.
           hscond(ilev)=0.
@@ -421,7 +420,7 @@ MODULE module_sf_bem
             call radfluxspv(nzcanm,nlev,albrof,rs,swddif,emrof,rl,tr_av,tout,sigma,radflux,pv_frac_roof,tpv)
             hrrof=radflux
         endif
-
+        !write(*,*) "call radfluxs radflux,albrof,rs,emrof,rl,sigma,tr_av",radflux, albrof, rs, emrof, rl, sigma, tr_av
 !Internal walls for intermediate rooms
 
       if(nlev.gt.2) then
@@ -730,14 +729,21 @@ MODULE module_sf_bem
       if(gr_flag.eq.1)then
       call wall_gr(hfgr,gr_frac_roof,swwal,nrof,dt,dzrof,krof,csrof,htot,trof1D)
       else
+       !write(*,*) "poooooooooooooooooooooooorcoooooooooooooooooooooooooo dioooooooooooooooooooooooooooooooo"
        call wall(swwal,nrof,dt,dzrof,krof,csrof,htot,trof1D)
+       !call wall_roof(swwal,nrof,dt,dzrof,krof,csrof,htot,trof1D)
       endif
       do irof=1,nrof
          trof(irof)=trof1D(irof)
-
+         
        end do
-      
-
+      !write(*,*) "trof di merda ==============", trof
+      !write(*,*) "htot di merda ==============", htot
+      !write(*,*) "csrof di merda ==============", csrof
+      !write(*,*) "krof di merda ==============", krof
+      !write(*,*) "nrof di merda ==============", nrof
+      !write(*,*) "sswal di merda ==============", swwal
+      !write(*,*) "dzrof di merda ==============", dzrof 
 ! Calculation of the heat fluxes and of the temperature of the rooms
 ! ------------------------------------------------------------------
         !WRITE(*,*) "step_8 subroutine BEM"
@@ -1007,7 +1013,7 @@ MODULE module_sf_bem
               write(*,*) 'please decrease under of',20
               stop
            endif
-
+           
 	   call wall_coeff(nz,dt,dz,cs,k,k1,k2,kc)
 	   swwall=0
 
@@ -1153,14 +1159,15 @@ MODULE module_sf_bem
                 b(iz)=temp(iz)
                 a(1,iz)=-k2(iz)
 	end do		
-
+      
 !Computation of the external value (iz=n) of A and B:
 	
 		a(-1,nz)=-k1(nz)
 		a(0,nz)=1+k1(nz)
 		a(1,nz)=0.
 		b(nz)=temp(nz)+flux(2)*kc(nz)
-                     
+
+                   
 !Resolution of the system A*T(n+1)=B
 
 	call tridia(nz,a,b,temp)
@@ -1168,6 +1175,137 @@ MODULE module_sf_bem
 
         return
 	end  subroutine wall	
+
+
+!====6=8===============================================================72
+!====6=8===============================================================72
+
+
+	subroutine wall_roof(swwall,nz,dt,dz,k,cs,flux,temp)			!creata x test
+	
+!______________________________________________________________________
+
+!The aim of this subroutine is to solve the 1D heat fiffusion equation
+!for roof, walls and streets:
+!
+!	dT/dt=d/dz[K*dT/dz] where:
+!
+!	-T is the surface temperature(wall, street, roof)
+!      	-Kz is the heat diffusivity inside the material.
+!
+!The resolution is done implicitly with a FV discretisation along the
+!different layers of the material:
+
+!	____________________________
+!     n             *
+!                   *
+!                   *
+!     	____________________________
+!    i+2
+!              	    I+1                 
+!	____________________________        
+!    i+1        
+!                    I                ==>   [T(I,n+1)-T(I,n)]/DT= 
+!	____________________________        [F(i+1)-F(i)]/DZI
+!    i
+!                   I-1               ==> A*T(n+1)=B where:
+!	____________________________         
+!   i-1              *                   * A is a TRIDIAGONAL matrix.
+!                    *                   * B=T(n)+S takes into account the sources.
+!                    *
+!     1	____________________________
+
+!________________________________________________________________
+
+	implicit none
+		
+!Input:
+!-----
+ 	integer nz		!Number of layers inside the material
+	real dt			!Time step
+	real dz(nz)		!Layer sizes [m]
+	real cs(nz)		!Specific heat of the material [J/(m3.K)] 
+	real k(nz+1)		!Thermal conductivity in each layers (face) [W/(m.K)]
+	real flux(2)		!Internal and external flux terms.
+        
+
+!Input-Output:
+!-------------
+
+	integer swwall          !swich for the physical coefficients calculation
+	real temp(nz)		!Temperature at each layer
+
+!Local:
+!-----	
+
+      real a(-1:1,nz)          !  a(-1,*) lower diagonal      A(i,i-1)
+                               !  a(0,*)  principal diagonal  A(i,i)
+                               !  a(1,*)  upper diagonal      A(i,i+1).
+      
+      real b(nz)	       !Coefficients of the second term.	
+      real k1(20)
+      real k2(20)
+      real kc(20)
+      save k1,k2,kc
+      integer iz
+        	
+!________________________________________________________________
+!
+!Calculation of the coefficients
+	
+	if (swwall.eq.1) then
+	
+           if (nz.gt.20) then
+              write(*,*) 'number of layers in the walls/roofs too big ',nz
+              write(*,*) 'please decrease under of',20
+              stop
+           endif
+
+	   call wall_coeff(nz,dt,dz,cs,k,k1,k2,kc)
+	   swwall=0
+
+	end if
+ 	
+!Computation of the first value (iz=1) of A and B:
+	
+		 a(-1,1)=0.
+		 a(0,1)=1+k2(1)
+		 a(1,1)=-k2(1)
+                   b(1)=temp(1)+flux(1)*kc(1)
+
+	do iz=2,nz-1
+                a(-1,iz)=-k1(iz)
+                a(0,iz)=1+k1(iz)+k2(iz)
+                b(iz)=temp(iz)
+                a(1,iz)=-k2(iz)
+	end do		
+      
+!Computation of the external value (iz=n) of A and B:
+	
+		a(-1,nz)=-k1(nz)
+		a(0,nz)=1+k1(nz)
+		a(1,nz)=0.
+		b(nz)=temp(nz)+flux(2)*kc(nz)
+
+      !write(*,*)"a(-1,nz)", a(-1,nz)
+      !write(*,*)"-k1(nz)", -k1(nz)
+      !write(*,*)"a(0,nz)", a(0,nz)
+      !write(*,*)"k1(nz)", k1(nz)
+      !write(*,*)"a(1,nz)", a(1,nz)
+      !write(*,*)"b(nz)", b(nz)
+      !write(*,*)"temp(nz)", temp(nz)
+      !write(*,*)"flux(2)", flux(2)
+      !write(*,*)"kc(nz)", kc(nz)
+               
+!Resolution of the system A*T(n+1)=B
+
+	call tridia(nz,a,b,temp)
+	
+
+        return
+	end  subroutine wall_roof	
+
+
 
 !====6=8===============================================================72
 !====6=8===============================================================72
@@ -2485,7 +2623,7 @@ MODULE module_sf_bem
                         icol=k
                      endif
                   elseif(ipiv(k).gt.1)then
-                  !   CALL wrf_error_fatal('singular matrix in gaussjbem')	!WRF_error_gl
+                   pause 'singular matrix in gaussjbem'	!WRF_error_gl
                   endif
                enddo
             endif
@@ -2507,6 +2645,7 @@ MODULE module_sf_bem
          endif
          
          !if(a(icol,icol).eq.0) CALL wrf_error_fatal('singular matrix in gaussjbem')    !WRF_error_gl
+         if (a(icol,icol).eq.0) pause 'singular matrix in gaussjbem'
          
          pivinv=1./a(icol,icol)
          a(icol,icol)=1
