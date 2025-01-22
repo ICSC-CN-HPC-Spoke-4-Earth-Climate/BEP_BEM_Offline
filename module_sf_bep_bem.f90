@@ -18,7 +18,7 @@ IMPLICIT NONE
       parameter (ndm=2)
 
       integer nz_um           ! Maximum number of vertical levels in the urban grid
-      parameter(nz_um=5)
+      parameter(nz_um=41)
 
       integer ng_u            ! Number of grid levels in the ground
       parameter (ng_u=10)
@@ -36,14 +36,19 @@ IMPLICIT NONE
       parameter (ngb_u=10)
 
       real dz_u                ! Urban grid resolution
-      parameter (dz_u=5.)
+      parameter (dz_u=1.)
 
       integer nbui_max         !maximum number of types of buildings in an urban class
-      parameter (nbui_max=1)  !must be less or equal than nz_um 
+      parameter (nbui_max=9)  !must be less or equal than nz_um 
 
       real h_water
-      parameter(h_water=0.0009722) !mm of irrigation per hour
-
+      parameter(h_water=0.009722*5) !mm of irrigation per hour
+      real lai_urb(nurbmax),absv(nurbmax),gr_frac_trees_u(nurbmax)
+      real conv_tree(nurbmax)
+      integer tree_lev(nurbmax)
+      data lai_urb/5,5,5/	!leaf area index of the trees
+      data absv/0.5,0.5,0.5/	!parameter needed to estimate the absorption by leaves (see formula below)
+      data tree_lev/6,6,6/ 	! level at whcih the trees are (in the urban grid) e. g. 2 means between 5 and 10m, 3 between 10 and 15 and so on
 !-------------------------------------------------------------------------------
 ! ALTRE VARIABILI AGGIUNTE
 !-------------------------------------------------------------------------------
@@ -53,14 +58,20 @@ IMPLICIT NONE
 !-------------------------------------------------------------------------------
 ! variabili da URBPARM.TBL (input SUBROUTINE init_para)
 !-------------------------------------------------------------------------------
+     real, dimension(nurbm) :: MET_COMF_TBL  =[1.2,1.2,1.2]
+     real, dimension(nurbm) :: CLO_COMF_TBL  =[0.4,0.4,0.4]
+     real, dimension(nurbm) :: WME_COMF_TBL  =[0.,0.,0.]
+     real, dimension(nurbm) :: HEIGHT_COMF_TBL =[80.,80.,80.]
+     real, dimension(nurbm) :: WEIGHT_COMF_TBL =[1.80,1.80,1.80]
+
      real, dimension(nurbm) :: TBLEND_TBL = [293.00, 293.00, 293.00]	!  Lower boundary temperature for building wall temperature [ K ]
      real, dimension(nurbm) :: TRLEND_TBL = [293.00, 293.00, 293.00]    !  Lower boundary condition for roof temperature [ K ]
      real, dimension(nurbm) :: TGLEND_TBL = [293.00, 293.00, 293.00]    !  Lower boundary temperature for ground (road) temperature [ K ]
-     real, dimension(nurbm) :: ALBB_TBL  = [0.20, 0.20, 0.20]           !  Surface albedo of building wall [ fraction ] 
-     real, dimension(nurbm) :: ALBR_TBL  = [0.20, 0.20, 0.20]	        !  Surface albedo of roof [ fraction ]     
-     real, dimension(nurbm) :: ALBG_TBL =  [0.20, 0.20, 0.20]           !  Surface albedo of ground (road) [ fraction ]
+     real, dimension(nurbm) :: ALBB_TBL  = [0.25, 0.25, 0.25]           !  Surface albedo of building wall [ fraction ] 
+     real, dimension(nurbm) :: ALBR_TBL  = [0.13, 0.13, 0.13]	        !  Surface albedo of roof [ fraction ]     
+     real, dimension(nurbm) :: ALBG_TBL =  [0.21, 0.21, 0.21]           !  Surface albedo of ground (road) [ fraction ]
      real, dimension(nurbm) :: EPSB_TBL =  [0.90, 0.90, 0.90]           !  Surface emissivity of building wall [-]
-     real, dimension(nurbm) :: EPSR_TBL =  [0.90, 0.90, 0.90]           !  Surface emissivity of roof [ - ]
+     real, dimension(nurbm) :: EPSR_TBL =  [0.91, 0.91, 0.91]           !  Surface emissivity of roof [ - ]
      real, dimension(nurbm) :: EPSG_TBL =  [0.95, 0.95, 0.95]           !  Surface emissivity of ground (road) [ - ]
      real, dimension(nurbm) :: Z0R_TBL =   [0.01, 0.01, 0.01]           !  Roughness length for momentum over roof [ m ]
      real, dimension(nurbm) :: Z0G_TBL =   [0.01, 0.01, 0.01]	        !  Roughness length for momentum, over ground (road) [ m ] Only active for CH_SCHEME == 1
@@ -68,42 +79,49 @@ IMPLICIT NONE
      real, dimension(nurbm) :: beta_tbl = [0.75, 0.75, 0.75]		! Thermal efficiency of heat exchanger
      real, dimension(nurbm) :: cop_tbl = [3.5, 3.5, 3.5] 		! Coefficient of performance of the A/C systems [ - ]
      real, dimension(nurbm) :: bldac_frc_tbl = [1.0, 1.0, 1.0]		! fraction of buildings installed with A/C systems [ - ]
-     real, dimension(nurbm) :: cooled_frc_tbl = [1.0, 1.0, 1.0]		! fraction of cooled floor area in buildings [ - ]
-     real, dimension(nurbm) :: gr_frac_roof_tbl = [1., 1., 1.]		! fraction of green roof over the roof (0:1)
+     real, dimension(nurbm) :: cooled_frc_tbl = [0.5, 0.5, 0.5]		! fraction of cooled floor area in buildings [ - ]
+     real, dimension(nurbm) :: gr_frac_roof_tbl = [0.0, 0.0, 0.0]	! fraction of green roof over the roof (0:1)
+     real, dimension(nurbm) :: gr_frac_trees_tbl = [0.225, 0.225, 0.225]	! fraction of trees over the street (0:1)
+     real, dimension(nurbm) :: gr_frac_ground_tbl = [0.52, 0.52, 0.52]  ! fraction of gardens in the streets
      real, dimension(nurbm) :: pwin_tbl = [0.2, 0.2, 0.2]		! Coverage area fraction of windows in the walls of the building [ - ]
-     integer, dimension(nurbm) :: sw_cond_tbl = [0, 0, 0]			! Air conditioning switch, 1=ON
-     real, dimension(nurbm) :: targtemp_tbl = [298.00, 298.00, 297.00]	! Target Temperature of the A/C systems, [ K ]
+     integer, dimension(nurbm) :: sw_cond_tbl = [0, 0, 0]       	! Air conditioning switch, 1=ON
+     real, dimension(nurbm) :: targtemp_tbl = [296.00, 296.00, 296.00]	! Target Temperature of the A/C systems, [ K ]
      real, dimension(nurbm) :: targhum_tbl = [0.005, 0.005, 0.005]	! Target humidity of the A/C systems, [ Kg/Kg ]
      real, dimension(nurbm) :: gaptemp_tbl = [0.5, 0.5, 0.5]		! Comfort Range of the indoor Temperature, [ K ]
      real, dimension(nurbm) :: time_off_tbl = [24., 24., 24.]		! End local time of A/C systems, [ h ]
      real, dimension(nurbm) :: time_on_tbl = [0., 0., 0.]		! Initial local time of A/C systems, [ h ]
+     !default
+ 
+     real, dimension(nurbm) :: CAPB_TBL = [1.61E6, 1.61E6, 1.73E6]      ! Heat capacity of building wall [ J m{-3} K{-1} ]
+     real, dimension(nurbm) :: CAPR_TBL = [1.57E6,1.57E6,1.40E6]        ! Heat capacity of roof  [ J m{-3} K{-1} ]
 
-     real, dimension(nurbm) :: CAPB_TBL = [1.0E6, 1.0E6, 1.0E6]		! Heat capacity of building wall [ J m{-3} K{-1} ]
-     real, dimension(nurbm) :: CAPR_TBL = [1.0E6, 1.0E6, 1.0E6]         ! Heat capacity of roof  [ J m{-3} K{-1} ]
-     real, dimension(nurbm) :: CAPG_TBL = [1.4E6, 1.4E6, 1.4E6]		! Heat capacity of ground (road) [ J m{-3} K{-1} ]
-     real, dimension(nurbm) :: AKSB_TBL = [0.67, 0.67, 0.67]		! Thermal conductivity of building wall [ J m{-1} s{-1} K{-1} ]
-     real, dimension(nurbm) :: AKSR_TBL = [0.67, 0.67, 0.67]		! Thermal conductivity of roof [ J m{-1} s{-1} K{-1} ]
-     real, dimension(nurbm) :: AKSG_TBL = [0.4004, 0.4004, 0.4004]      ! Thermal conductivity of ground (road) [ J m{-1} s{-1} K{-1} ]
+     real, dimension(nurbm) :: CAPG_TBL = [1.4E6,1.4E6,1.4E6]		! Heat capacity of ground (road) [ J m{-3} K{-1} ]
+     real, dimension(nurbm) :: AKSB_TBL = [1.25, 1.25, 1.25]         ! Thermal conductivity of building wall [ J m{-1} s{-1} K{-1} ]
+
+     real, dimension(nurbm) :: AKSR_TBL = [1.00, 1.00, 1.00]         ! Thermal conductivity of roof [ J m{-1} s{-1} K{-1} ]
+     real, dimension(nurbm) :: AKSG_TBL = [0.6004, 0.6004, 0.6004]      ! Thermal conductivity of ground (road) [ J m{-1} s{-1} K{-1} ]
     
      real, dimension(nurbm) :: gaphum_tbl = [0.005, 0.005, 0.005]	! Comfort Range of the specific humidity, [ Kg/Kg ]
-     real, dimension(nurbm) :: perflo_tbl = [0.01, 0.01, 0.01]		! Peak number of occupants per unit floor area, [ person/m^2 ]
-     real, dimension(nurbm) :: pv_frac_roof_tbl = [1.0, 1.0, 1.0]		! fraction of photovoltaic panels over the roof (0:1)
-     real, dimension(nurbm) :: hsesf_tbl = [16.00, 20.00, 36.00]	! Peak heat generated by equipments, [ W/m^2 ]
-
+     real, dimension(nurbm) :: perflo_tbl = [0.0029, 0.0029, 0.0029]    ! Peak number of occupants per unit floor area, [ person/m^2 ]
+     real, dimension(nurbm) :: pv_frac_roof_tbl = [0.0, 0.0, 0.0]	! fraction of photovoltaic panels over the roof (0:1)
+     real, dimension(nurbm) :: hsesf_tbl = [19.00, 19.00, 19.00]	! Peak heat generated by equipments, [ W/m^2 ]
+     
+     integer THERM_COMF_TBL
+     parameter(therm_comf_tbl=2)
      integer gr_type_tbl						! GR_TYPE: 1 for GRASS, 2 for SEDUM vegetation on the green roof
-     parameter(gr_type_tbl=2)
+     parameter(gr_type_tbl=1)
      
      integer gr_flag_tbl
      parameter(gr_flag_tbl=1)						! GR_FLAG: 1 to switch on green roof model (0-1)
-     
      integer NUMDIR_TBL
      parameter(NUMDIR_TBL=2)						! number of street direction for each urban class
 
 !---------------------------------------------------------------------------------
 ! DAILY PATTERN OF VARIABLE FROM URBPARM.TBL
 !---------------------------------------------------------------------------------
-     real, dimension(24) :: irho_tbl = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1]	! irrigation?
-     
+!    real, dimension(24) :: irho_tbl = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1]	! irrigation?
+     real, dimension(24) :: irho_tbl = [1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.,1.]        ! irrigation?
+
      !Diurnal heating profile of heat generated by equipments
      real, dimension(24) :: hsequip_tbl = [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.5, 1.0, 1.0, 1.0, 1.0, & 
                                            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25]
@@ -128,9 +146,9 @@ real, dimension(2,3) ::  BUILDING_WIDTH_TBL = reshape([13.0, 13.0, 17.0, 17.0, 2
 
   ! Assign values to HEIGHT_BIN_TBL and HPERCENT_BIN_TBL
   ! (Assuming example values, adjust as needed)
-  real, dimension(7,3) :: HEIGHT_BIN_TBL = reshape([5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, &		!CLASS 1
-                        			    5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, &		!CLASS 2
-                        			    5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0], [7, 3])	!CLASS 3
+  real, dimension(7,3) :: HEIGHT_BIN_TBL = reshape([1.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, &		!CLASS 1
+                        			    1.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, &		!CLASS 2
+                        			    1.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0], [7, 3])	!CLASS 3
 
   real, dimension(7,3) :: HPERCENT_BIN_TBL = reshape([100.0, 0.0, 0.0, 0., 0., 0., 0., &			!CLASS 1
                               			      0.0, 20.0, 60.0, 20.0, 0., 0., 0., &			!CLASS 2
@@ -165,39 +183,52 @@ real, dimension(2,3) ::  BUILDING_WIDTH_TBL = reshape([13.0, 13.0, 17.0, 17.0, 2
       real latent             ! Latent heat of vaporization [J/kg] (used in BEM)
       real dgmax              ! Maximum ground water holding capacity (mm)
       real drmax              ! Maximum ground roof holding capacity (mm)
-
-      parameter(vk=0.40,g_u=9.81,pi=3.141592653,r=287.,cp_u=1004.)        
+      integer npos
+      parameter (npos=3)
+      real zman
+      parameter (zman=1.8)
+      integer ncomf
+      parameter (ncomf=10)
+      real ranges_set(ncomf+1),ranges_utci(ncomf+1)
+      data ranges_set/-100.,10.,14.5,17.5,22.2,25.6,30.,34.5,37.5,42.,100./
+      data ranges_utci/-100.,-40.,-27.,-13.,0.,9.,26.,32.,38.,46.,100./
+      parameter(vk=0.40,g_u=9.81,pi=3.141592653,r=287.,cp_u=1004.)    
+      real :: alb_gr = 0.3    ! albedo of garden surface     
       parameter(rcp_u=r/cp_u,sigma=5.67e-08,p0=1.e+5,latent=2.45e+06,dgmax=1.,drmax=1.)
-
+      
 ! -----------------------------------------------------------------------   
 
    CONTAINS
 
-      subroutine BEP_BEM(FRC_URB2D,UTYPE_URB2D,itimestep,dz8w,dt,u_phy,v_phy,      &
-                      th_phy,rho,p_phy,swdown,glw,                                 &
-                      gmt,julday,xlong,xlat,                                       &
-                      declin_urb,cosz_urb2d,omg_urb2d,                             &
-                      num_urban_ndm,  urban_map_zrd,  urban_map_zwd, urban_map_gd, &
-                      urban_map_zd,  urban_map_zdf,   urban_map_bd, urban_map_wd,  &
-                      urban_map_gbd,  urban_map_fbd,                               &
-                      urban_map_zgrd,  num_urban_hi,                               &
-                      trb_urb4d,tw1_urb4d,tw2_urb4d,tgb_urb4d,                     &
-                      tlev_urb3d,qlev_urb3d,tw1lev_urb3d,tw2lev_urb3d,             &
-                      tglev_urb3d,tflev_urb3d,sf_ac_urb3d,lf_ac_urb3d,             &        
-                      cm_ac_urb3d,                                                 & 
-                      sfvent_urb3d,lfvent_urb3d,                                   &
-                      sfwin1_urb3d,sfwin2_urb3d,                                   &
-                      sfw1_urb3d,sfw2_urb3d,sfr_urb3d,sfg_urb3d,                   &
-                      ep_pv_urb3d,t_pv_urb3d,                                      &
-                      trv_urb4d,qr_urb4d,qgr_urb3d,tgr_urb3d,                      &
-                      drain_urb4d,draingr_urb3d,                                   &
-                      sfrv_urb3d,lfrv_urb3d,                                       &
-                      dgr_urb3d,dg_urb3d,                                          &
-                      lfr_urb3d,lfg_urb3d,rainbl,swddir,swddif,                    &
-                      lp_urb2d,hi_urb2d,lb_urb2d,hgt_urb2d,                        &
-                      a_u,a_v,a_t,a_e,b_u,b_v,                                     &
-                      b_t,b_e,b_q,dlg,dl_u,sf,vl,                                  &
-                      rl_up,rs_abs,emiss,grdflx_urb,qv_phy,                        &
+      subroutine BEP_BEM(FRC_URB2D,UTYPE_URB2D,itimestep,dz8w,dt,u_phy,v_phy,      & !1
+                      th_phy,rho,p_phy,swdown,glw,                                 & !2
+                      gmt,julday,xlong,xlat,                                       & !3
+                      declin_urb,cosz_urb2d,omg_urb2d,                             & !4
+                      num_urban_ndm,  urban_map_zrd,  urban_map_zwd, urban_map_gd, & !5
+                      urban_map_zd,  urban_map_zdf,   urban_map_bd, urban_map_wd,  & !6
+                      urban_map_gbd,  urban_map_fbd,                               & !7
+                      urban_map_zgrd,  num_urban_hi,                               & !8
+                      trb_urb4d,tw1_urb4d,tw2_urb4d,tgb_urb4d,                     & !9
+                      tlev_urb3d,qlev_urb3d,tw1lev_urb3d,tw2lev_urb3d,             & !10
+                      tglev_urb3d,tflev_urb3d,sf_ac_urb3d,lf_ac_urb3d,             & !11       
+                      cm_ac_urb3d,                                                 & !12
+                      sfvent_urb3d,lfvent_urb3d,                                   & !13
+                      sfwin1_urb3d,sfwin2_urb3d,                                   & !14
+                      sfw1_urb3d,sfw2_urb3d,sfr_urb3d,sfg_urb3d,                   & !15
+                      ep_pv_urb3d,t_pv_urb3d,                                      & !16
+                      trv_urb4d,qr_urb4d,qgr_urb3d,tgr_urb3d,                      & !17
+                      drain_urb4d,draingr_urb3d,                                   & !18
+                      sfrv_urb3d,lfrv_urb3d,                                       & !19
+                      dgr_urb3d,dg_urb3d,                                          & !20
+                      tgv_urb4d,sfgv_urb3d,lfgv_urb3d,qg_urb4d,                    & !GARDEN 21
+                      tmr_11,tmr_12,tmr_13,tmr_21,tmr_22,tmr_23,                   & !COMFORT
+                      comf_10,comf_50,comf_90,hist_comf,num_urban_ncomf,           & !COMFORT
+                      lfr_urb3d,lfg_urb3d,rainbl,swddir,swddif,                    & !22
+                      lp_urb2d,hi_urb2d,lb_urb2d,hgt_urb2d,                        & !23
+                      a_u,a_v,a_t,a_e,b_u,b_v,                                     & !24
+                      b_t,b_e,b_q,dlg,dl_u,sf,vl,                                  & !25
+                      rl_up,rs_abs,emiss,grdflx_urb,qv_phy,                        & !26
+                      history_interval,tsk_av,                                     & !COMFORT
                       ids,ide, jds,jde, kds,kde,                                   &
                       ims,ime, jms,jme, kms,kme,                                   &
                       its,ite, jts,jte, kts,kte)  
@@ -244,6 +275,7 @@ real, dimension(2,3) ::  BUILDING_WIDTH_TBL = reshape([13.0, 13.0, 17.0, 17.0, 2
    INTEGER, INTENT(IN) :: urban_map_fbd
    INTEGER, INTENT(IN) :: num_urban_ndm
    INTEGER, INTENT(IN) :: num_urban_hi
+   INTEGER, INTENT(IN  ) :: num_urban_ncomf
    INTEGER, INTENT(IN) :: urban_map_zgrd
    REAL, DIMENSION(ims:ime, 1:urban_map_zrd, jms:jme ), INTENT(INOUT) :: trb_urb4d
    REAL, DIMENSION(ims:ime, 1:urban_map_zwd, jms:jme ), INTENT(INOUT) :: tw1_urb4d
@@ -286,7 +318,14 @@ real, dimension(2,3) ::  BUILDING_WIDTH_TBL = reshape([13.0, 13.0, 17.0, 17.0, 2
    REAL, OPTIONAL, DIMENSION(ims:ime, 1:num_urban_ndm, jms:jme ),INTENT(INOUT) :: dg_urb3d !GRZ
    REAL, OPTIONAL, DIMENSION(ims:ime, 1:urban_map_zdf, jms:jme ),INTENT(INOUT) :: lfr_urb3d !GRZ
    REAL, OPTIONAL, DIMENSION(ims:ime, 1:num_urban_ndm, jms:jme ),INTENT(INOUT) :: lfg_urb3d !G
-
+   REAL, OPTIONAL, DIMENSION( ims:ime, 1:urban_map_gd, jms:jme ), INTENT(INOUT) :: tgv_urb4d !GARDEN
+   REAL, OPTIONAL, DIMENSION( ims:ime, 1:urban_map_gd, jms:jme ), INTENT(INOUT) :: qg_urb4d !GARDEN
+   REAL, OPTIONAL, DIMENSION( ims:ime, 1:num_urban_ndm, jms:jme ), INTENT(INOUT) :: sfgv_urb3d !GARDEN
+   REAL, OPTIONAL, DIMENSION( ims:ime, 1:num_urban_ndm, jms:jme ), INTENT(INOUT) :: lfgv_urb3d !GARDEN
+   REAL, DIMENSION( ims:ime, jms:jme ), INTENT(INOUT) :: tmr_11,tmr_12,tmr_13,tmr_21,tmr_22,tmr_23
+   REAL, DIMENSION( ims:ime, jms:jme ), INTENT(INOUT) :: comf_10,comf_50,comf_90
+   REAL, DIMENSION( ims:ime, 1:num_urban_ncomf,jms:jme ), INTENT(INOUT) :: hist_comf
+   real hist_comf1D(ncomf)
    REAL, DIMENSION(ims:ime, 1:num_urban_hi, jms:jme ), INTENT(IN) :: hi_urb2d
    REAL, DIMENSION(ims:ime,jms:jme), INTENT(IN) :: lp_urb2d
    REAL, DIMENSION(ims:ime,jms:jme), INTENT(IN) :: lb_urb2d
@@ -294,6 +333,7 @@ real, dimension(2,3) ::  BUILDING_WIDTH_TBL = reshape([13.0, 13.0, 17.0, 17.0, 2
 
    real z(ims:ime,kms:kme,jms:jme)            ! Vertical coordinates
    REAL, INTENT(IN )::   DT      	      ! Time step
+   INTEGER, INTENT(IN) :: history_interval
 
 !------------------------------------------------------------------------
 !     Output
@@ -374,7 +414,7 @@ real, dimension(2,3) ::  BUILDING_WIDTH_TBL = reshape([13.0, 13.0, 17.0, 17.0, 2
       real z0(ndm,nz_um)        ! Roughness lengths "profiles"
       real bs_urb(ndm,nurbmax)  ! Building width
       real ws_urb(ndm,nurbmax)  ! Street width
-
+      real tsk_av
 !
 ! for twini_u, and trini_u the initial value at the deepest level is kept constant during the simulation
 !
@@ -388,7 +428,9 @@ real, dimension(2,3) ::  BUILDING_WIDTH_TBL = reshape([13.0, 13.0, 17.0, 17.0, 2
       real emw_u(nurbmax)                     ! Emissivity of wall
       real emr_u(nurbmax)                     ! Emissivity of roof
       real gr_frac_roof_u(nurbmax)
+      real gr_frac_trees_u(nurbmax)
       real pv_frac_roof_u(nurbmax)
+      real gr_frac_ground_u(nurbmax)            !GARDEN
       integer gr_flag_u
       integer gr_type_u
 
@@ -400,7 +442,10 @@ real, dimension(2,3) ::  BUILDING_WIDTH_TBL = reshape([13.0, 13.0, 17.0, 17.0, 2
       real fsw_u(nz_um,ndm,nurbmax)             !  from sky to wall
       real fws_u(nz_um,ndm,nurbmax)             !  from sky to wall
       real fsg_u(ndm,nurbmax)                   !  from sky to ground
-
+      real mrw_dir(nz_um,2*ndm,npos)         !  from wall
+      real mrg_dir(2*ndm,npos)               !  from ground
+      real mrs_dir(2*ndm,npos)               !  from sky
+      real xpos(ndm,npos)
 !    Roughness parameters
       real z0g_u(nurbmax)       ! The ground's roughness length
       real z0r_u(nurbmax)       ! The roof's roughness length
@@ -456,6 +501,10 @@ real, dimension(2,3) ::  BUILDING_WIDTH_TBL = reshape([13.0, 13.0, 17.0, 17.0, 2
 
       real tw1D(2*ndm,nz_um,nwr_u,nbui_max) ! temperature in each layer of the wall
       real tg1D(ndm,ng_u)                   ! temperature in each layer of the ground
+      real tgv1D(ndm,ng_u)      ! GARDEN temperature in each layer of the ground
+      real qg1D(ndm,ng_u) !GARDEN
+      real sfgv1D(ndm)    !GARDEN
+      real lfgv1D(ndm)    !GARDEN
       real tr1D(ndm,nz_um,nwr_u)   	    ! temperature in each layer of the roof
       real trv1D(ndm,nz_um,ngr_u)           ! temperature in each layer of the GREEN roof
       real qr1D(ndm,nz_um,ngr_u)            ! humidity in each layer of the GREEN roof
@@ -520,6 +569,9 @@ real, dimension(2,3) ::  BUILDING_WIDTH_TBL = reshape([13.0, 13.0, 17.0, 17.0, 2
       real dl_u1D(kms:kme)        ! Length scale (lb in formula (22) ofthe BLM paper)
       real gfr1D(ndm,nz_um)
       real time_bep
+      integer therm_comf_u
+      real met_comf_u,clo_comf_u,wme_comf_u
+      real height_comf_u,weight_comf_u
 ! arrays used to collapse indexes
       integer ind_zwd(nbui_max,nz_um,nwr_u,ndm)
       integer ind_gd(ng_u,ndm)
@@ -536,19 +588,19 @@ real, dimension(2,3) ::  BUILDING_WIDTH_TBL = reshape([13.0, 13.0, 17.0, 17.0, 2
       integer ix,iy,iz,iurb,id,iz_u,iw,ig,ir,ix1,iy1,k
       integer it, nint
       integer iii
-      logical first
+      logical first,ccheck
       character(len=80) :: text
       data first/.true./
-      save first,time_bep
+      save first,time_bep,ccheck
        
       save alag_u,alaw_u,alar_u,csg_u,csw_u,csr_u,                       &
-           albg_u,albw_u,albr_u,emg_u,emw_u,emr_u,                       &
+          albg_u,albw_u,albr_u,emg_u,emw_u,emr_u,                       &
            z0g_u,z0r_u, nd_u,strd_u,drst_u,ws_u,bs_u,h_b,d_b,ss_u,pb_u,  &
-           nz_u,z_u,albwin_u,emwind_u,cop_u,pwin_u,beta_u,sw_cond_u,     &
+          nz_u,z_u,albwin_u,emwind_u,cop_u,pwin_u,beta_u,sw_cond_u,     &
            bldac_frc_u,cooled_frc_u,                                     &
            time_on_u,time_off_u,targtemp_u,gaptemp_u,targhum_u,gaphum_u, &
-           perflo_u,gr_frac_roof_u,                    &
-           pv_frac_roof_u,hsesf_u,hsequip,irho,gr_flag_u,gr_type_u
+          perflo_u,gr_frac_roof_u,gr_frac_ground_u,gr_frac_trees_u,                    &
+          pv_frac_roof_u,hsesf_u,hsequip,irho,gr_flag_u,gr_type_u
 
 
 !------------------------------------------------------------------------
@@ -566,11 +618,6 @@ real, dimension(2,3) ::  BUILDING_WIDTH_TBL = reshape([13.0, 13.0, 17.0, 17.0, 2
 ! DOI 10.1007/s00704-009-0143-8 
 !------------------------------------------------------------------------
 !
-!prepare the arrays to collapse indexes
-   write(*,*) "value of u_phy in bep_bem", u_phy
-   WRITE(*,*) "size of HEIGHT_BIN_TBL", size(HEIGHT_BIN_TBL,1), size(HEIGHT_BIN_TBL,2)
-   WRITE(*,*)  "size of HPERCENT_BIN_TBL", size(HPERCENT_BIN_TBL,1), size(HPERCENT_BIN_TBL,2)
-   WRITE(*,*) "a_u inside the BEP_BEM", a_u 
 !
      if(urban_map_zwd.lt.nbui_max*nz_um*ndm*max(nwr_u,ng_u))then
         write(*,*)'urban_map_zwd too small, please increase to at least ', nbui_max*nz_um*ndm*max(nwr_u,ng_u)
@@ -765,23 +812,24 @@ write(*,*)'urban_map_gbd too small, please increase to at least ', nbui_max*ndm*
 
 
       if (first) then                           ! True only on first call
-
+!WRITE(*,*) "input alar in init_para", alar_u
          call init_para(alag_u,alaw_u,alar_u,csg_u,csw_u,csr_u,&
                 twini_u,trini_u,tgini_u,albg_u,albw_u,albr_u,albwin_u,emg_u,emw_u,&
                 emr_u,emwind_u,z0g_u,z0r_u,nd_u,strd_u,drst_u,ws_u,bs_u,h_b,d_b,  &
                 cop_u,pwin_u,beta_u,sw_cond_u,time_on_u,time_off_u,targtemp_u,    &
                 bldac_frc_u,cooled_frc_u,                                         &
                 gaptemp_u,targhum_u,gaphum_u,perflo_u,                            &
-                gr_frac_roof_u,pv_frac_roof_u,                                    & 
+                gr_frac_roof_u,pv_frac_roof_u,gr_frac_ground_u,gr_frac_trees_u,   & 
                 hsesf_u,hsequip,irho,gr_flag_u,gr_type_u,TBLEND_TBL,TRLEND_TBL,   &
                 TGLEND_TBL,ALBB_TBL,ALBR_TBL,ALBG_TBL,EPSB_TBL,EPSR_TBL,EPSG_TBL, &
-	        Z0R_TBL,Z0G_TBL,beta_tbl,cop_tbl,bldac_frc_tbl,cooled_frc_tbl, &
-                gr_frac_roof_tbl,pwin_tbl,sw_cond_tbl,targtemp_tbl,targhum_tbl,   &
+	        Z0R_TBL,Z0G_TBL,beta_tbl,cop_tbl,bldac_frc_tbl,cooled_frc_tbl, &         
+                gr_frac_roof_tbl,gr_frac_ground_tbl,gr_frac_trees_tbl,pwin_tbl,sw_cond_tbl,targtemp_tbl,targhum_tbl,   &
                 gaptemp_tbl,time_off_tbl,time_on_tbl,CAPB_TBL,CAPR_TBL,CAPG_TBL,  & 
                 AKSB_TBL,AKSR_TBL,AKSG_TBL,gaphum_tbl,perflo_tbl,pv_frac_roof_tbl, &
                 hsesf_tbl,gr_type_tbl,gr_flag_tbl,STREET_DIRECTION_TBL,STREET_WIDTH_TBL, &
                 BUILDING_WIDTH_TBL,NUMHGT_TBL,HEIGHT_BIN_TBL,HPERCENT_BIN_TBL,NUMDIR_TBL,nurbm)
- 
+
+                !WRITE(*,*) "output alar dopo call init_para", alar_u
 !Initialisation of the urban parameters and calculation of the view factor
         call icBEP(nd_u,h_b,d_b,ss_u,pb_u,nz_u,z_u)
    
@@ -791,9 +839,21 @@ write(*,*)'urban_map_gbd too small, please increase to at least ', nbui_max*ndm*
 
 do ix=its,ite
       do iy=jts,jte
+        comf_10(ix,iy)=0.
+        comf_50(ix,iy)=0.
+        comf_90(ix,iy)=0.
+
+        hist_comf(ix,:,iy)=0.
         if (FRC_URB2D(ix,iy).gt.0.) then    ! Calling BEP only for existing urban classes.
 	
          iurb=UTYPE_URB2D(ix,iy)
+         therm_comf_u=therm_comf_tbl
+         met_comf_u=met_comf_tbl(iurb)
+         clo_comf_u=clo_comf_tbl(iurb)
+         wme_comf_u=wme_comf_tbl(iurb)
+         height_comf_u=height_comf_tbl(iurb)
+         weight_comf_u=weight_comf_tbl(iurb)
+         hist_comf1D(:)=0.
          !WRITE(*,*) "iurb", iurb   !_gl
          hi_urb1D=0.
          do iz_u=1,nz_um
@@ -803,7 +863,7 @@ do ix=its,ite
 
          call icBEPHI_XY(iurb,hb_u,hi_urb1D,ss_urb,pb_urb,    &
                          nz_urb(iurb),z_u)
-         !WRITE(*,*) "iurb input in param", iurb
+         !WRITE(*,*) "alar_u input in param", alar_u
          call param(iurb,nz_u(iurb),nz_urb(iurb),nzurban(iurb),      &
                     nd_u(iurb),csg_u,csg,alag_u,alag,csr_u,csr,      &
                     alar_u,alar,csw_u,csw,alaw_u,alaw,               &
@@ -813,12 +873,13 @@ do ix=its,ite
                     lp_urb2d(ix,iy),lb_urb2d(ix,iy),                 &
                     hgt_urb2d(ix,iy),FRC_URB2D(ix,iy))
          
-!
+        !WRITE(*,*) "alar_u output  in param", alar_u
 !We compute the view factors in the icBEP_XY routine
 !  
 
          call icBEP_XY(iurb,fww_u,fwg_u,fgw_u,fsw_u,fws_u,fsg_u,   &
-                         nd_u(iurb),strd,ws,nzurban(iurb),z_u)   
+                         nd_u(iurb),strd,ws,nzurban(iurb),z_u,     &
+                         mrw_dir,mrg_dir,mrs_dir,xpos               )   
 
          ibui=0
          nlev=0
@@ -877,7 +938,14 @@ do iz= kts,kte
          do id=1,ndm
            do ig=1,ng_u
             tg1D(id,ig)=tgb_urb4d(ix,ind_gd(ig,id),iy)
-           enddo
+            if(gr_flag_u.eq.1)then
+            tgv1D(id,ig)=tgv_urb4d(ix,ind_gd(ig,id),iy)!GARDEN
+            qg1D(id,ig)=qg_urb4d(ix,ind_gd(ig,id),iy)  !GARDEN
+            else
+            tgv1D(id,ig)=0.!GARDEN
+            qg1D(id,ig)=0.!GARDEN
+          endif  
+          enddo
          
            do iz_u=1,nz_um
              do ir=1,nwr_u
@@ -894,8 +962,6 @@ do iz= kts,kte
              enddo
            enddo
         enddo
-
-WRITE(*,*) "fino a initialize BEM"     !_gl
 
 !Initialize variables for BEM
 
@@ -922,8 +988,6 @@ WRITE(*,*) "fino a initialize BEM"     !_gl
             qlev1D(iz_u,ibui)= qlev_urb3d(ix,ind_bd(ibui,iz_u),iy)
          enddo !ibui
          enddo !iz_u
-
-
 
          do id=1,ndm  !direction
             do iz_u=1,nz_um !vertical levels
@@ -974,9 +1038,15 @@ WRITE(*,*) "fino a initialize BEM"     !_gl
           sfg1D(id)=sfg_urb3d(ix,id,iy)
           lfg1D(id)=lfg_urb3d(ix,id,iy)
           dg1D(id)=dg_urb3d(ix,id,iy)
-
+          if(gr_flag_u.eq.1)then
+          sfgv1D(id)=sfgv_urb3d(ix,id,iy)!GARDEN
+          lfgv1D(id)=lfgv_urb3d(ix,id,iy)!GARDEN
+          else
+           sfgv1D(id)=0.!GARDEN
+           lfgv1D(id)=0.!GARDEN
+          endif
         enddo
-
+              
 	 do id=1,ndm
 	 do iz=1,nz_um
 	  tpvlev1D(id,iz)=t_pv_urb3d(ix,ind_zdf(iz,id),iy)
@@ -1004,84 +1074,14 @@ WRITE(*,*) "fino a initialize BEM"     !_gl
          zr1D=acos(COSZ_URB2D(ix,iy))
          deltar1D=DECLIN_URB
          ah1D=OMG_URB2D(ix,iy)
-         
-         WRITE(*,*) "fino a call BEP1D"     !_gl
-       !  WRITE(*,*) "kms=", kms, "kme=", kme
-       !  WRITE(*,*) "z", LBOUND(z1d,1),UBOUND(z1d,1)   !,LBOUND(z1d,2),UBOUND(z1d,2),LBOUND(z1d,3),UBOUND(z1d,3)
-       !  WRITE(*,*) "ua", LBOUND(ua1d,1),UBOUND(ua1d,1)
-       !  WRITE(*,*) "va", LBOUND(va1d,1),UBOUND(va1d,1)
-       !  WRITE(*,*) "pt", LBOUND(pt1d,1),UBOUND(pt1d,1)
-       !  WRITE(*,*) "da", LBOUND(da1d,1),UBOUND(da1d,1)
-       !  WRITE(*,*) "pr", LBOUND(pr1d,1),UBOUND(pr1d,1)
-       !  WRITE(*,*) "pt0", LBOUND(pt01d,1),UBOUND(pt01d,1)
-       !  WRITE(*,*) "qv", LBOUND(qv1d,1),UBOUND(qv1d,1)
-         
-       !  WRITE(*,*) "nz_um,nz_um,ndm,nurbm", nz_um,nz_um,ndm,nurbm
-       !  WRITE(*,*) "fww", UBOUND(fww_u,1),UBOUND(fww_u,2),UBOUND(fww_u,3),UBOUND(fww_u,4)
-       !  WRITE(*,*) "fwg", UBOUND(fwg_u,1),UBOUND(fwg_u,2),UBOUND(fwg_u,3)
-       !  WRITE(*,*) "fgw", UBOUND(fgw_u,1),UBOUND(fgw_u,2),UBOUND(fgw_u,3)
-       !  WRITE(*,*) "fws", UBOUND(fws_u,1),UBOUND(fws_u,2),UBOUND(fws_u,3)
-       !  WRITE(*,*) "fsg", UBOUND(fsg_u,1),UBOUND(fsg_u,2)
-        
-       !  WRITE(*,*) "iurb", iurb
-       !  WRITE(*,*) "bs_u", UBOUND(bs_urb,1),UBOUND(bs_urb,2)        
-       !  WRITE(*,*) "albw_u", UBOUND(albw_u,1)
-       !  WRITE(*,*) "z_u", UBOUND(z_u,1)
-       !  WRITE(*,*) "hsequip", UBOUND(hsequip,1)
-       !  WRITE(*,*) "irho", UBOUND(irho,1)
-         
-       ! WRITE(*,*) "tw", UBOUND(tw1D,1),UBOUND(tw1D,2),UBOUND(tw1D,3),UBOUND(tw1D,4)
-       ! WRITE(*,*) "tr", UBOUND(tr1D,1),UBOUND(tr1D,2),UBOUND(tr1D,3)
-       ! WRITE(*,*) "tg", UBOUND(tg1D,1),UBOUND(tg1D,2)
-       ! WRITE(*,*) "trv", UBOUND(trv1D,1),UBOUND(trv1D,2),UBOUND(trv1D,3)
-       ! WRITE(*,*) "sfw", UBOUND(sfw1D,1),UBOUND(sfw1D,2),UBOUND(sfw1D,3)
-       ! WRITE(*,*) "sfg", UBOUND(sfg1D,1)
-       ! WRITE(*,*) "sfr", UBOUND(sfr1D,1),UBOUND(sfr1D,2)        
-       ! WRITE(*,*) "sfrv", UBOUND(sfrv1D,1),UBOUND(sfrv1D,2)
-       ! WRITE(*,*) "lfrv", UBOUND(lfrv1D,1),UBOUND(lfrv1D,2)
-       ! WRITE(*,*) "dgr", UBOUND(dgr1D,1),UBOUND(dgr1D,2)
-       ! WRITE(*,*) "dg", UBOUND(dg1D,1)
-       ! WRITE(*,*) "lfr", UBOUND(lfr1D,1),UBOUND(lfr1D,2)
-       ! WRITE(*,*) "lfg", UBOUND(lfg1D,1)
-  
-       ! WRITE(*,*) "drain", UBOUND(drain1D,1),UBOUND(drain1D,2)
-       ! WRITE(*,*) "qr", UBOUND(qr1D,1),UBOUND(qr1D,2),UBOUND(qr1D,3)
-       ! WRITE(*,*) "a_u", UBOUND(a_u1D,1)!,UBOUND(a_u1D,2)
-       ! WRITE(*,*) "a_v", UBOUND(a_v1D,1)
-       ! WRITE(*,*) "a_t", UBOUND(a_t1D,1)
-       ! WRITE(*,*) "a_e", UBOUND(a_e1D,1)
-       ! WRITE(*,*) "b_u", UBOUND(b_u1D,1)
-       ! WRITE(*,*) "b_v", UBOUND(b_v1D,1)
-       ! WRITE(*,*) "b_t", UBOUND(b_t1D,1)
-       ! WRITE(*,*) "b_ac", UBOUND(b_ac1D,1)
-       ! WRITE(*,*) "b_e", UBOUND(b_e1D,1)
-       ! WRITE(*,*) "b_q", UBOUND(b_q1D,1)
-       ! WRITE(*,*) "dlg", UBOUND(dlg1D,1)
-       ! WRITE(*,*) "dl_u", UBOUND(dl_u1D,1)
-       ! WRITE(*,*) "sf", UBOUND(sf1D,1)
-       ! WRITE(*,*) "vl", UBOUND(vl1D,1)
-        
-       ! WRITE(*,*) "alag", UBOUND(alag,1)
-       ! WRITE(*,*) "alaw", UBOUND(alaw,1)
-       ! WRITE(*,*) "alar", UBOUND(alar,1)
-       ! WRITE(*,*) "alaf", UBOUND(alaf,1)
-       ! WRITE(*,*) "csgb", UBOUND(csgb,1)
-       ! WRITE(*,*) "csg", UBOUND(csg,1)
-       ! WRITE(*,*) "csw", UBOUND(csw,1)
-       ! WRITE(*,*) "csr", UBOUND(csr,1)
-       ! WRITE(*,*) "csf", UBOUND(csf,1)
-       
-       ! WRITE(*,*) "tlev", UBOUND(tlev1D,1),UBOUND(tlev1D,2)
-       ! WRITE(*,*) "qlev", UBOUND(qlev1D,1),UBOUND(qlev1D,2)
-       ! WRITE(*,*) "sflev", UBOUND(sflev1D,1),UBOUND(sflev1D,2)
-       ! WRITE(*,*) "lflev", UBOUND(lflev1D,1),UBOUND(lflev1D,2)
-       ! WRITE(*,*) "consumlev", UBOUND(consumlev1D,1),UBOUND(consumlev1D,2)
-        
-       ! WRITE(*,*) "eppvlev", UBOUND(eppvlev1D,1)
-       ! WRITE(*,*) "tpvlev", UBOUND(tpvlev1D,1),UBOUND(tpvlev1D,2)
-       ! WRITE(*,*) "sfvlev", UBOUND(sfvlev1D,1),UBOUND(sfvlev1D,2)
-       ! WRITE(*,*) "lfvlev", UBOUND(lfvlev1D,1),UBOUND(lfvlev1D,2)
-       ! WRITE(*,*) "twlev", UBOUND(twlev1D,1),UBOUND(twlev1D,2)
+
+! PLUMBER validation
+open(unit=999,file='SW_up.txt')
+open(unit=9991,file='lfg.txt')
+open(unit=9992,file='lfgv.txt')
+open(unit=9993,file='lh_tree.txt')
+open(unit=9994,file='lfvlev.txt')
+!write(*,*) "call BEP1D"
 
 call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,pt01D,  &
                    zr1D,deltar1D,ah1D,rs1D,rld1D,alagb,             & 
@@ -1096,20 +1096,27 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
                    sw_cond_u,time_on_u,time_off_u,targtemp_u,       &
                    gaptemp_u,targhum_u,gaphum_u,perflo_u,           &
                    gr_frac_roof_u(iurb),pv_frac_roof_u(iurb),  & 
-                   hsesf_u,hsequip,irho,gr_flag_u,gr_type_u,        &
+                   hsesf_u,hsequip,irho,gr_flag_u,gr_type_u,gr_frac_ground_u(iurb),gr_frac_trees_u(iurb),        &
                    tw1D,tg1D,tr1D,trv1D,sfw1D,sfg1D,sfr1D,    &
                    sfrv1D,lfrv1D,    &
                    dgr1D,dg1D,lfr1D,lfg1D,                       &
                    drain1D,rainbl(ix,iy),qr1D,                   &
+                   tgv1D,qg1D,sfgv1D,lfgv1D,                        & !GARDEN
                    a_u1D,a_v1D,a_t1D,a_e1D,                         & 
                    b_u1D,b_v1D,b_t1D,b_ac1D,b_e1D,b_q1D,            & 
                    dlg1D,dl_u1D,sf1D,vl1D,rl_up(ix,iy),             &
                    rs_abs(ix,iy),emiss(ix,iy),grdflx_urb(ix,iy),    &
                    qv1D,tlev1D,qlev1D,sflev1D,lflev1D,consumlev1D,  &
-                   eppvlev1D,tpvlev1D,sfvlev1D,lfvlev1D,twlev1D,tglev1D,tflev1D,sfwin1D,tair1D,sfr_indoor1D,sfrpv1D,gfr1D) 
-
-          WRITE(*,*) "dopo call BEP1D fuori subroutine"
- 
+                   eppvlev1D,tpvlev1D,sfvlev1D,lfvlev1D,twlev1D,tglev1D,tflev1D,sfwin1D,tair1D,sfr_indoor1D,sfrpv1D,gfr1D, &
+                   tmr_11(ix,iy),tmr_12(ix,iy),tmr_13(ix,iy), &
+                   tmr_21(ix,iy),tmr_22(ix,iy),tmr_23(ix,iy), &
+                   comf_10(ix,iy),comf_50(ix,iy),comf_90(ix,iy), &
+                   hist_comf1D,                     &
+                   mrw_dir,mrg_dir,mrs_dir,xpos,    &
+                   therm_comf_u,met_comf_u,clo_comf_u, &
+                   wme_comf_u,height_comf_u,weight_comf_u, &
+                   history_interval,tsk_av) 
+          hist_comf(ix,:,iy)=hist_comf1D(:) 
           do ibui=1,nbui_max !type of building
 	    do iz=1,nz_um   !vertical levels
                do id=1,ndm ! direction
@@ -1123,7 +1130,12 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 	  sfg_urb3d(ix,id,iy)=sfg1D(id)
           lfg_urb3d(ix,id,iy)=lfg1D(id)
           dg_urb3d(ix,id,iy)=dg1D(id) 
-	 enddo
+          if(gr_flag_u.eq.1)then
+          lfg_urb3d(ix,id,iy)=lfg1D(id)   !GARDEN
+          sfgv_urb3d(ix,id,iy)=sfgv1D(id) !GARDEN
+          lfgv_urb3d(ix,id,iy)=lfgv1D(id) !GARDEN
+          endif
+	 enddo	
          
 	 do id=1,ndm
 	 do iz=1,nz_um
@@ -1139,24 +1151,24 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 	 enddo
 	 enddo
 
-        OPEN(333,FILE='Stampa.txt')	!_gl
+     !   OPEN(333,FILE='Stampa.txt')	!_gl
         do ibui=1,nbui_max
          do iz_u=1,nz_um
          do iw=1,nwr_u
           do id=1,ndm
-     !     write(333,'(I5,3(1x,I5))') id,iz_u,iw,ind_zwd(iz_u,iw,id)	!_gl
           tw1_urb4d(ix,ind_zwd(ibui,iz_u,iw,id),iy)=tw1D(2*id-1,iz_u,iw,ibui)
           tw2_urb4d(ix,ind_zwd(ibui,iz_u,iw,id),iy)=tw1D(2*id,iz_u,iw,ibui)
-         WRITE(333,'(I5,3(1x,I5))') id,iw,iz_u,ibui,ind_zwd(ibui,iz_u,iw,id)   !_indici _gl
          enddo
          enddo
          enddo
          enddo
-        CLOSE(333)    !_gl
 
           do id=1,ndm
             do ig=1,ng_u
-              
+               if(gr_flag_u.eq.1)then
+               tgv_urb4d(ix,ind_gd(ig,id),iy)=tgv1D(id,ig) !GARDEN
+               qg_urb4d(ix,ind_gd(ig,id),iy)=qg1D(id,ig) !GARDEN
+               endif               
                tgb_urb4d(ix,ind_gd(ig,id),iy)=tg1D(id,ig)
             enddo
             do iz_u=1,nz_um
@@ -1172,8 +1184,6 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
             enddo
           enddo
 !
-         
-!
 !Outputs of BEM
 !
         
@@ -1181,8 +1191,6 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
          do iz_u=1,nz_um !vertical levels
             tlev_urb3d(ix,ind_bd(ibui,iz_u),iy)=tlev1D(iz_u,ibui)  
             qlev_urb3d(ix,ind_bd(ibui,iz_u),iy)=qlev1D(iz_u,ibui)  
-            !WRITE(*,*) "tlev1D(iz_u,ibui)", tlev1D(iz_u,ibui)
-           ! WRITE(*,*) "tlev_urb3d(ix,ind_bd(ibui,iz_u),iy)", tlev_urb3d(ix,ind_bd(ibui,iz_u),iy)
          enddo !iz_u
          enddo !ibui
  
@@ -1215,8 +1223,6 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
              enddo !iw
          enddo !id
 
-
-
          sf_ac_urb3d(ix,iy)=0.
          lf_ac_urb3d(ix,iy)=0.
          cm_ac_urb3d(ix,iy)=0.
@@ -1228,7 +1234,6 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
          tgr_urb3d(ix,iy)=0.
          meso_urb=(1./4.)*FRC_URB2D(ix,iy)/((bs_urb(1,iurb)+ws_urb(1,iurb))*bs_urb(2,iurb))+ &
                   (1./4.)*FRC_URB2D(ix,iy)/((bs_urb(2,iurb)+ws_urb(2,iurb))*bs_urb(1,iurb))
-         WRITE(*,*) "value of meso_urb", meso_urb, bs_urb(1,1), ws_urb(1,1)	!_gl
           meso_urb_ac=meso_urb*bldac_frc_u(iurb)*cooled_frc_u(iurb)
           roof_frac=FRC_URB2D(ix,iy)*bs_urb(1,iurb)/(bs_urb(1,iurb)+ws_urb(1,iurb))
          ibui=0
@@ -1278,7 +1283,6 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
        endif
 !End outputs of bem
 !
-         
         sf_ac=0.
         sf(ix,kts:kte,iy)=0.
         vl(ix,kts:kte,iy)=0.
@@ -1314,69 +1318,11 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 
          endif ! FRC_URB2D
 
-
       enddo  ! iy
       enddo  ! ix
 
-
         time_bep=time_bep+dt
-
-!      print*, 'ss_urb', ss_urb
-!      print*, 'pb_urb', pb_urb
-!      print*, 'nz_urb', nz_urb
-!      print*, 'd_urb',  d_urb
-         
-!      return
-
-!-----------------------------------------------------------------------
-! ULTIMA PARTE PER VERIFICA
-!-----------------------------------------------------------------------
-
-! Get the array dimensions
-!    ims = LBOUND(dz8w,1)
-!    ime = UBOUND(dz8w,1)
-!    kms = LBOUND(dz8w,2)
-!    kme = UBOUND(dz8w,2)
-!    jms = LBOUND(dz8w,3)
-!    jme = UBOUND(dz8w,3)
-
-    ! stampare variabili pippo
-    ! Print out the array dimensions and first element
-    WRITE(*,*) "Fine subroutine BEP_BEM"
-!    WRITE(*,*) "Array dimensions:", ims, ime, jms, jme, kms, kme
-!    WRITE(*,*) "TRB_URB4D:", TRB_URB4D(1,1:urban_map_zrd,1)
-!    WRITE(*,*) "tw1_urb4d:", tw1_urb4d(1:1,1:urban_map_zwd,1:1)
-!    WRITE(*,*) "tw2_urb4d:", tw2_urb4d(1:1,1:urban_map_zwd,1:1)
-!    WRITE(*,*) "tgb_urb4d:", tgb_urb4d(1:1,1:urban_map_gd,1:1)
-!    WRITE(*,*) "trv_urb4d:", trv_urb4d(1:1,1:urban_map_zgrd,1:1)
-!    WRITE(*,*) "qr_urb4d:", qr_urb4d(1:1,1:urban_map_zgrd,1:1)
-!    WRITE(*,*) "qgr_urb3d:", qgr_urb3d(ims:ime, jms:jme)
-!    WRITE(*,*) "tgr_urb3d:", tgr_urb3d(ims:ime, jms:jme)
-!    WRITE(*,*) "drain_urb4d:", drain_urb4d(1:1,1:1,1:1)
-!    WRITE(*,*) "draingr_urb3d:", draingr_urb3d(1:1,1:1)
-!    WRITE(*,*) "tlev_urb3d:", tlev_urb3d( ims:ime, 1:urban_map_bd, jms:jme )
-!    WRITE(*,*) "qlev_urb3d:", qlev_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "tw1lev_urb3d:", tw1lev_urb3d( ims:ime, 1:urban_map_wd , jms:jme )
-!    WRITE(*,*) "tw2lev_urb3d:", tw2lev_urb3d( ims:ime, 1:urban_map_wd , jms:jme )
-!    WRITE(*,*) "tglev_urb3d:", tglev_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "tflev_urb3d:", tflev_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "lf_ac_urb3d:", lf_ac_urb3d(1:1,1:1)
-!    WRITE(*,*) "sf_ac_urb3d:", sf_ac_urb3d(1:1,1:1)
-!    WRITE(*,*) "cm_ac_urb3d:", cm_ac_urb3d(1:1,1:1)
-!    WRITE(*,*) "ep_pv_urb3d:", ep_pv_urb3d(1:1,1:1)
-!    WRITE(*,*) "t_pv_urb3d:", t_pv_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "sfvent_urb3d:", sfvent_urb3d(1:1,1:1)
-!    WRITE(*,*) "lfvent_urb3d:", lfvent_urb3d(1:1,1:1)
-!    WRITE(*,*) "sfwin1_urb3d:", sfwin1_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "sfwin2_urb3d:", sfwin2_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "sfr_urb3d:", sfr_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "sfg_urb3d:", sfg_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "sfrv_urb3d:", sfrv_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "lfrv_urb3d:", lfrv_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "dgr_urb3d:", dgr_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "dg_urb3d:", dg_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "lfr_urb3d:", lfr_urb3d(1:1,1:1,1:1)
-!    WRITE(*,*) "lfg_urb3d:", lfg_urb3d(1:1,1:1,1:1)    
+        
      return
      END SUBROUTINE BEP_BEM
 
@@ -1394,15 +1340,20 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
                       time_on_u,time_off_u,targtemp_u,                 &
                       gaptemp_u,targhum_u,gaphum_u,perflo_u,           &
                       gr_frac_roof,pv_frac_roof,        & 
-                      hsesf_u,hsequip,irho,gr_flag,gr_type,                    &
+                      hsesf_u,hsequip,irho,gr_flag,gr_type,gr_frac_ground, gr_frac_trees,      &
                       tw,tg,tr,trv,sfw,sfg,sfr,            &
                       sfrv,lfrv,dgr,dg,lfr,lfg,drain,rainbl,qr,      & 
+                      tgv,qg,sfgv,lfgv,                                & !GARDEN 
                       a_u,a_v,a_t,a_e,                                 &
                       b_u,b_v,b_t,b_ac,b_e,b_q,                        & 
                       dlg,dl_u,sf,vl,rl_up,rs_abs,emiss,grdflx_urb,    &
                       qv,tlev,qlev,sflev,lflev,consumlev,              &
-                      eppvlev,tpvlev,sfvlev,lfvlev,twlev,tglev,tflev,sfwin,tmp_u,sfr_indoor,sfrpv,gfr)    
-        ! print*,'SFR_AFT',sfr(id,iz)
+                      eppvlev,tpvlev,sfvlev,lfvlev,twlev,tglev,tflev,sfwin,tmp_u,sfr_indoor,sfrpv,gfr, &
+                      tmr_11,tmr_12,tmr_13,tmr_21,tmr_22,tmr_23, &
+                      comf_10,comf_50,comf_90,hist_comf,                   &
+                      mrw_dir,mrg_dir,mrs_dir,xpos, &
+                      therm_comf_u,met_comf_u,clo_comf_u,wme_comf_u, &
+                      height_comf_u,weight_comf_u,history_interval,tsk_av)    
 
 
 
@@ -1458,7 +1409,19 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       real fsw(nz_um,ndm,nurbm)        !  from sky to wall
       real fws(nz_um,ndm,nurbm)        !  from wall to sky
       real fsg(ndm,nurbm)              !  from sky to ground
-      
+! WRF COMFORT start
+      real mrw_dir(nz_um,2*ndm,npos)         !  from wall
+      real mrg_dir(2*ndm,npos)               !  from ground
+      real mrs_dir(2*ndm,npos)               !  from sky
+      real xpos(ndm,npos)
+      real tmr_11,tmr_12,tmr_13,tmr_21,tmr_22,tmr_23
+      real comf_10,comf_50,comf_90
+      real tmr_dir(ndm,npos,2)
+      integer history_interval,idump
+      integer therm_comf_u
+      real hist_comf(ncomf)
+      real met_comf_u,clo_comf_u,wme_comf_u, &
+                      height_comf_u,weight_comf_u 
 !    Street parameters
       integer ndu                  ! Number of street direction for each urban class 
       real bs_u(ndm,nurbm)         ! Building width
@@ -1482,6 +1445,8 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       real hsequip(24)
       real irho(24)
       real gr_frac_roof
+      real gr_frac_ground !GARDEN
+      real gr_frac_trees !GARDEN
       real pv_frac_roof
       integer gr_flag
       integer gr_type
@@ -1514,7 +1479,10 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       real gfr(ndm,nz_um)     ! Heat flux transferred from the surface of the roof towards the interior
       real gfw(2*ndm,nz_um,nbui_max)     ! Heat flux transfered from the surface of the walls towards the interior
       real qr(ndm,nz_um,ngr_u)  ! Green Roof soil moisture
-
+      real tgv(ndm,ng_u)          !GARDEN Temperature in each layer of the vegetated ground [K]
+      real qg(ndm,ng_u)          !GARDEN Ground soil moisture
+      real sfgv(ndm)              !GARDEN Sensible heat flux from vegetated ground (road)
+      real lfgv(ndm)              !GARDEN Latent heat flux from vegetated ground (road)
 ! ----------------------------------------------------------------------
 ! OUTPUT:
 ! ----------------------------------------------------------------------
@@ -1583,12 +1551,12 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 ! Potential temperature of the surfaces at each level of the "urban grid"
 
      real ptg(ndm)             ! Ground potential temperatures 
+     real ptgv(ndm)          !GARDEN
      real ptr(ndm,nz_um)     ! Roof potential temperatures 
      real ptrv(ndm,nz_um)     ! Roof potential temperatures 
      real ptw(2*ndm,nz_um,nbui_max)     ! Walls potential temperatures 
-
-     real tg_av(ndm)
- 
+     real tg_av(ndm) 
+     real tsk_av 
 ! Explicit and implicit component of the momentum, temperature and TKE sources or sinks on
 ! vertical surfaces (walls) ans horizontal surfaces (roofs and street)
 ! The fluxes can be computed as follow: Fluxes of X = A*X + B
@@ -1619,6 +1587,9 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
     integer nt_int ! number of internal time step
     integer iz,id, it_int,it
     integer iw
+    !TREES
+      real hfx_tree(nz_um),lh_tree(nz_um) !sensibel and latent energy from trees
+!TREES
 
 !---------------------------------------
 !New variables uses in BEM
@@ -1701,6 +1672,10 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       real tr_avb(ndm,nbui_max)
       real sfr_avb(ndm,nbui_max)
 
+!PLUMBER validation
+      integer i, j
+      integer time_print
+      real total_sum
 ! ----------------------------------------------------------------------
 ! END VARIABLES DEFINITIONS
 ! ----------------------------------------------------------------------
@@ -1709,7 +1684,6 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 !
 !initialize the variables inside the param routine
         
-        WRITE(*,*) "start subroutine BEP1d"
         nhourday=ah/PI*180./15.+12.
         if (nhourday >= 24) nhourday = nhourday - 24
         if (nhourday < 0)  nhourday = nhourday + 24
@@ -1745,29 +1719,60 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
                            sfw_av,sfwind_av,sfw,sfwin)
                            
      do id=1,ndu
-       tg_av(id)=tg(id,ng_u)
+     tg_av(id)=((1-gr_frac_ground)*tg(id,ng_u)**4.+ &
+       gr_frac_ground*tgv(id,ng_u)**4.)**(1./4.)
      do iz=1,nz_um
 
        tr_av(id,iz)=((1-gr_frac_roof)*tr(id,iz,nwr_u)**4.+   &
        gr_frac_roof*trv(id,iz,ngr_u)**4.)**(1./4.)
-
      enddo
      enddo
+     tsk_av=(tg_av(1)+tg_av(2))/2.
      
-     
-
-
-   
+  
      call modif_rad(iurb,ndu,nzu,z_u,ws,           &
                     drst,strd,ss,pb,                &
                     tw_av,tg_av,twlev_av,albg,albw,    &
                     emw,emg,pwin_u(iurb),albwin,    &
                     emwind,fww,fwg,fgw,fsw,fsg,     &
                     zr,deltar,ah,xlat,swddir,swddif,      &  !_gl  
-                    rs,rld,rsw,rsd,rsg,rlw,rlg)  
+                    rs,rld,rsw,rsd,rsg,rlw,rlg,            &
+                    gr_frac_trees, &                 !TREES
+                    hfx_tree,lh_tree,bs)
+! WRF COMFORT start
+    
+     idump = (history_interval * 60.) / dt
+    
+     if(mod((itimestep),idump).eq.0)then
+     if(therm_comf_u.gt.0)then
+         call modif_rad_mr(iurb,ndu,nzu,z_u,ws,drst,strd,ss,pb,    &
+                       tw_av,tg,twlev_av,albg,albw,emw, &
+                       emg,pwin_u(iurb),albwin,  &
+                       emwind,             &
+                       mrw_dir,mrg_dir,mrs_dir,xpos,             &
+                       zr,deltar,ah,xlat,                          &
+                       rs,rld,rsw,rsg,rlw,rlg,ix,iy,tmr_dir, &
+                       gr_frac_trees) !CROCUS
+         call comf_calc_lw(therm_comf_u,met_comf_u,clo_comf_u, &
+                       wme_comf_u,height_comf_u, &
+                       weight_comf_u,ndm,npos,tmr_dir,ua_u(1),va_u(1), &
+                       pt_u(1),pr_u(1),da_u(1),qv_u(1), &
+                       ws,bs,pb,                           &
+                       comf_10,comf_50,comf_90,hist_comf, &
+                       ix,iy, &
+                       iurb, &
+                       gr_frac_trees) !CROCUS
+            tmr_11=(1.-gr_frac_trees)*tmr_dir(1,1,1)+gr_frac_trees*tmr_dir(1,1,2)
+            tmr_12=(1.-gr_frac_trees)*tmr_dir(1,2,1)+gr_frac_trees*tmr_dir(1,2,2)
+            tmr_13=(1.-gr_frac_trees)*tmr_dir(1,3,1)+gr_frac_trees*tmr_dir(1,3,2)
+            tmr_21=(1.-gr_frac_trees)*tmr_dir(2,1,1)+gr_frac_trees*tmr_dir(2,1,2)
+            tmr_22=(1.-gr_frac_trees)*tmr_dir(2,2,1)+gr_frac_trees*tmr_dir(2,2,2)
+            tmr_23=(1.-gr_frac_trees)*tmr_dir(2,3,1)+gr_frac_trees*tmr_dir(2,3,2)
+     end if
+     end if
 
 
- 
+! WRF COMFORT end
 
 ! calculation of the urban albedo and the upward long wave radiation
 
@@ -1777,8 +1782,12 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
                        tw_av,emw,albw,rlw,rsw,sfw_av,             & 
                        tr_av,emr,albr,emwind,                        &
                        albwin,twlev_av,pwin_u(iurb),sfwind_av,rld,rs,sfr,sfrv,lfr,lfrv, & 
-                       rs_abs,rl_up,emiss,grdflx_urb,gr_frac_roof,tpvlev,pv_frac_roof)          
-   
+                       rs_abs,rl_up,emiss,grdflx_urb,gr_frac_roof,tpvlev,pv_frac_roof) 
+    !TREES
+      rs_abs=rs_abs+hfx_tree(tree_lev(iurb))+lh_tree(tree_lev(iurb))
+
+    !TREES      
+
     do id=1,ndu
     if(dg(id).le.dgmax) then
       dg(id)=dg(id)+(rainbl+(lfg(id)*dt)/latent)
@@ -1804,11 +1813,14 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
  
   
 
-     WRITE(*,*) "fino a call surf_temp"
      call surf_temp(ndu,pr_u,dt,                   & 
                     rld,rsg,rlg,                    &
                     tg,alag,csg,emg,albg,ptg,sfg,lfg,gfg)
      if(gr_flag.eq.1)then
+     if(gr_frac_ground.gt.0.)then
+     call surf_temp_veg(ndu,pr_u,dt,                   &
+                    rsg,rlg,tgv,ptgv,sfgv,lfgv,gfg,qg,rainbl,irri_now,gr_type,ng_u)
+     endif
      if(gr_frac_roof.gt.0.)then
      hfgr=0.
      call roof_temp_veg(ndu,pr_u,dt,                   &
@@ -1930,22 +1942,6 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
              enddo
           enddo
 
-    !print*,'HFGR_BEFORE_CALLING_BEM',hfgr(nlev(ibui))
-     !     WRITE(*,*) "input in BEM nz_um", nz_um		!_gl
-     !     WRITE(*,*) "input in BEM nlev", nlev                !_gl
-!	  WRITE(*,*) "input in BEM ibui", ibui                !_gl
-!          WRITE(*,*) "input in BEM nhourday", nhourday                !_gl
-!          WRITE(*,*) "input in BEM dt", dt                !_gl
- !         WRITE(*,*) "input in BEM bs_u", bs_u                !_gl
- !         WRITE(*,*) "input in BEM iurb", iurb                !_gl
-         
- !         WRITE(*,*) "input in BEM dz_u", dz_u                !_gl
- !         WRITE(*,*) "input in BEM nwr_u", nwr_u                !_gl
- !         WRITE(*,*) "input in BEM nf_u", nf_u                !_gl
- !        WRITE(*,*) "input in BEM ngb_u", ngb_u                !_gl
- !         WRITE(*,*) "input in BEM sfwb1D", sfwb1D                !_gl
-  !       WRITE(*,*) "input in BEM gfwb1D", gfwb1D                !_gl
-
           call BEM(nz_um,nlev(ibui),nhourday,dt,bs_u(1,iurb),                &
                    bs_u(2,iurb),dz_u,nwr_u,nf_u,nwr_u,ngb_u,sfwb1D,gfwb1D,   &
                    sfwinb1D,sfr_avb(1,ibui),lfrb(1,ibui),gfrb(1,ibui),       &
@@ -1965,8 +1961,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
                    tpvlevb(1,ibui),                                          &
                    sfvlev1D,lfvlev1D,hfgrb(1,ibui),tr_avb(1,ibui),           &
                    tpv(ibui),sfpv(ibui),sfr_indoor(ibui))
-                   
-                   WRITE(*,*) "dopo call BEM"
+           
 
 !
 !Temporal modifications
@@ -1991,6 +1986,9 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
              lfvlev(iz,ibui)=lfvlev1D(iz)
            enddo
  
+if (itimestep == 1 .or. mod(itimestep,30) == 0) then
+          write(9994,'(24(1x,f10.2))')lfvlev(1,1)
+endif
            do id=1,ndm
               do ily=1,nwr_u
                  trb(id,ily,ibui)=trb1D(ily)
@@ -2076,7 +2074,6 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
              
         
 ! Compute the implicit and explicit components of the sources or sinks on the "urban grid"
-      WRITE(*,*) "fino a call building"  !_gl
 
       call buildings(iurb,ndu,nzu,z0,cdrag,ua_u,va_u,                               & 
                      pt_u,pt0_u,ptg,ptr,ptrv,da_u,qv_u,pr_u,tmp_u,ptw,ptwin,pwin_u(iurb),drst,     &                      
@@ -2084,9 +2081,22 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
                      uhb_u,vhb_u,thb_u,ehb_u,ss,dt,sfw,sfg,sfr,sfrpv,sfrv,lfrv,   &
                      dgr,dg,lfr,lfg,                                                                    &
                      sfwin,pb,bs_u,dz_u,sflev,lflev,sfvlev,lfvlev,tvb_ac,ix,iy,rsg,rs,qr,gr_frac_roof,  &
-                     pv_frac_roof,gr_flag,gr_type)  
+                     pv_frac_roof,gr_flag,gr_type,ptgv,qg,sfgv,lfgv,gr_frac_ground,gr_frac_trees)  
       
+if (itimestep == 1 .or. mod(itimestep,30) == 0) then
+         write(9991,'(24(1x,f10.3))')lfg(1),lfg(2)
+         write(9992,'(24(1x,f10.3))')lfgv(1),lfgv(2)
+endif
+ !TREES
+    do iz=1,nz_um
+     hfx_tree(iz)=(hfx_tree(iz)/da_u(iz)/cp_u)*3.5	!_gl tree_canopy
+     lh_tree(iz)=(lh_tree(iz)/da_u(iz)/latent)*3.5  !_gl
+    enddo
+!TREES
 
+if (itimestep == 1 .or. mod(itimestep,30) == 0) then   
+     write(9993,'(24(1x,f10.3))')lh_tree(1),lh_tree(2)
+endif
 
 
 ! Calculation of the sensible heat fluxes for the ground, the wall and roof
@@ -2098,13 +2108,32 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       call urban_meso(ndu,kms,kme,kts,kte,nzu,z,dz,z_u,pb,ss,bs,ws,sf, & 
                      vl,uva_u,vva_u,uvb_u,vvb_u,tva_u,tvb_u,evb_u,     &
                      uhb_u,vhb_u,thb_u,ehb_u,qhb_u,qvb_u,              &
-                     a_u,a_v,a_t,a_e,b_u,b_v,b_t,b_e,b_q,tvb_ac,b_ac)                    
-       
+                     a_u,a_v,a_t,a_e,b_u,b_v,b_t,b_e,b_q,tvb_ac,b_ac, &
+!TREES
+                     hfx_tree,lh_tree,iurb)
+!TREES
 
 ! Calculation of the length scale taking into account the buildings effects
 
       call interp_length(ndu,kms,kme,kts,kte,nzu,z_u,z,ss,ws,bs,dlg,dl_u)
-      WRITE(*,*) "end subroutine BEP1d"
+
+!PLUMBER validation
+time_print=time_print+dt
+!write(*,*) "time_print", time_print
+!write(*,*) "dt", dt
+!if (mod(time_print,1800) == 0) then
+ if (itimestep == 1 .or. mod(itimestep,30) == 0) then
+!if(time_print.gt.1800.)then
+! Sum all values in rsw array
+  total_sum = 0.0
+     total_sum = ((albg*rsg(1)*ws(1)/(bs(1)+ws(1))) + (albg*rsg(2)*ws(2)/(bs(2)+ws(2))))/2 &
+      + albr*swddir*bs(1)/(bs(1)+ws(1)) + albr*swddif*bs(1)/(bs(1)+ws(1))  
+
+     write(999,'(24(1x,f10.3))')total_sum
+ !    time_print=0.
+endif
+
+      !WRITE(*,*) "end subroutine BEP1d"
       return
       end subroutine BEP1D
 
@@ -2200,7 +2229,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 !
 !Initialize variables
 !     
-      WRITE(*,*) "start subroutne param" !_gl
+      !WRITE(*,*) "start subroutne param" !_gl
       ss=0.
       pb=0.
       csg=0.
@@ -2222,15 +2251,21 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       drst=0.
       nzurban=0
 
-!Define the layer sizes in the walls
+!Define the layer sizes in the walls - spessore
 
       dzgb=(/0.2,0.12,0.08,0.05,0.03,0.02,0.02,0.01,0.005,0.0025/)
       dzr=(/0.02,0.02,0.02,0.02,0.02,0.02,0.02,0.01,0.005,0.0025/)   
       dzw=(/0.02,0.02,0.02,0.02,0.02,0.02,0.02,0.01,0.005,0.0025/)
       dzf=(/0.02,0.02,0.02,0.02,0.02,0.02,0.02,0.02,0.02,0.02/) 
+
+!Define the layer sizes in the walls - default
+!	dzgb=(/0.2,0.12,0.08,0.05,0.03,0.02,0.02,0.01,0.005,0.0025/)
+!	dzr=(/0.036,0.036,0.036,0.036,0.036,0.036,0.036,0.01,0.005,0.0025/)
+!	dzw=(/0.0432,0.0432,0.0432,0.0432,0.0432,0.0432,0.0432,0.01,0.005,0.0025/)
+!	dzf=(/0.036,0.036,0.036,0.036,0.036,0.036,0.036,0.01,0.005,0.0025/) 
   
        ihu=0
-       WRITE(*,*) "step_1 subroutine param" !_gl
+       !WRITE(*,*) "step_1 subroutine param" !_gl
 
        do iz=1,nz_um
           if (ss_urb(iz,iurb)/=0.) then
@@ -2268,12 +2303,14 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
         alaf(iflo)= csw_u(iurb)*alaw_u(iurb) 
       enddo
       alaf(nf_u+1)= csw_u(iurb)*alaw_u(iurb) 
-     
+
+    ! write(*,*) "csr alar prima ciclo bep_bem", csr_u, alar_u
       do ir=1,nwr_u
         csr(ir) = csr_u(iurb)
         alar(ir)= csr_u(iurb)*alar_u(iurb)
       enddo
       alar(nwr_u+1)= csr_u(iurb)*alar_u(iurb)
+!write(*,*) "csr alar dopo ciclo bep_bem", csr, alar
 
       do iw=1,nwr_u
         csw(iw) = csw_u(iurb)
@@ -2282,27 +2319,23 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       alaw(nwr_u+1)=csw_u(iurb)*alaw_u(iurb) 
       
 !------------------------------------------------------------------------  
-      WRITE(*,*) "step_2 subroutine param" !_gl           
-      WRITE(*,*) "iurb", iurb
- 
       do ig=1,ng_u
         csg(ig)=csg_u(iurb)
         alag(ig)=alag_u(iurb)
       enddo
-      WRITE(*,*) "fine primo loop"       
+       
        do id=1,ndu
           z0(id,1)=z0g_u(iurb)
         do iz=2,nzurban+1
            z0(id,iz)=z0r_u(iurb)
         enddo
        enddo
-      WRITE(*,*) "fine secondo loop"
+
        do id=1,ndu
           strd(id)=strd_u(id,iurb)
           drst(id)=drst_u(id,iurb)     
        enddo
        
-       WRITE(*,*) "step_3 subroutine param" !_gl
        do id=1,ndu
           if ((hgt_urb<=0.).OR.(lp_urb<=0.).OR.(lb_urb<=0.)) then
               ws(id)=ws_u(id,iurb)
@@ -2336,8 +2369,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
           endif
        enddo
        
-       WRITE(*,*) "end subroutne param" !_gl       
-       return
+      return
        end subroutine param
        
 ! ===6=8===============================================================72
@@ -2380,7 +2412,6 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 ! ----------------------------------------------------------------------
 ! END VARIABLES DEFINITIONS
 ! ----------------------------------------------------------------------
-       WRITE(*,*) "start subroutine interpol"    !_gl
        do iz_u=1,nz_u
         ctot=0.
         do iz=kts,kte
@@ -2391,7 +2422,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
        enddo
        
        return
-       WRITE(*,*) "end subroutine interpol"    !_gl
+       !WRITE(*,*) "end subroutine interpol"    !_gl
        end subroutine interpol
          
 ! ===6=8===============================================================72       
@@ -2427,7 +2458,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 !
 !Initialize Variables
 !     
-      WRITE(*,*) "start subroutine averaging_temp"
+
       tw_av=0.
       twlev_av=0.
       sfw_av=0.
@@ -2473,7 +2504,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
          enddo !iz         
       enddo !id
       
-      WRITE(*,*) "end subroutine averaging_temp"
+
       return
       end subroutine averaging_temp
 ! ===6=8===============================================================72       
@@ -2483,8 +2514,11 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
                           tw,tg_av,twlev,albg,albw,emw,emg,pwin,albwin,   &
                           emwin,fww,fwg,fgw,fsw,fsg,             &
                           zr,deltar,ah,xlat,swddir,swddif,           &    
-                          rs,rl,rsw,rsd,rsg,rlw,rlg)                       
- 
+                          rs,rl,rsw,rsd,rsg,rlw,rlg, & 
+!TREES
+                          gr_frac_trees, & 
+                          hfx_tree,lh_tree,bs)
+!TREES
 ! ----------------------------------------------------------------------
 ! This routine computes the modification of the short wave and 
 !  long wave radiation due to the buildings.
@@ -2542,17 +2576,53 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       real rsg(ndm)             ! Short wave radiation at the ground
       real rsw(2*ndm,nz_um)     ! Short wave radiation at the walls
       real rsd(2*ndm,nz_um)     ! Direct Short wave radiation at the walls
-
+!TREES
+      real hfx_tree(nz_um),lh_tree(nz_um) !sensible and latente from trees
+      real rsg_tree,rsw_tree,en_loss!
+      real rsg_sun,rsw_sun
+      real bs(ndm)              ! Street widths of the current urban class
+      real gr_frac_trees
+!TREES
 ! ----------------------------------------------------------------------
 ! LOCAL:
 ! ----------------------------------------------------------------------
 
       integer id,iz
-
+      real beta_bw,conv_tree_beta,rs_tot
 !  Calculation of the shadow effects
 
       call shadow_mas(nd,nz_u,zr,deltar,ah,drst,ws,ss,pb,z,        &
                      swddir,rsw,rsg,xlat)
+      ! TREES
+       hfx_tree(:)=0.
+       lh_tree(:)=0.
+       en_loss=0.
+      if(cos(zr).gt.0.0.and.cos(zr).le.1.0) then
+       do id=1,ndm
+        rsg_tree=rsg(id)*exp(-0.5/cos(zr)*absv(iurb)**(0.5)*lai_urb(iurb))
+        rsg_sun=rsg(id)
+        rsg(id)=(1.-gr_frac_trees)*rsg(id)+gr_frac_trees*rsg_tree
+        en_loss=en_loss+(rsg_sun-rsg(id))*ws(id)/(ws(id)+bs(id))/ndm
+!  both walls at all the levels below or equal to tree_lev:
+        do iz=1,tree_lev(iurb)
+         rsw_tree=rsw(2*id-1,iz)*exp(-0.5/cos(zr)*absv(iurb)**(0.5)*lai_urb(iurb))
+         rsw_sun=rsw(2*id-1,iz)
+         rsw(2*id-1,iz)=(1.-gr_frac_trees)*rsw(2*id-1,iz)+gr_frac_trees*rsw_tree
+         en_loss=en_loss+(rsw_sun-rsw(2*id-1,iz))*dz_u*pb(iz+1)/(ws(id)+bs(id))/ndm
+         rsw_tree=rsw(2*id,iz)*exp(-0.5/cos(zr)*absv(iurb)**(0.5)*lai_urb(iurb))
+         rsw_sun=rsw(2*id,iz)
+         rsw(2*id,iz)=(1.-gr_frac_trees)*rsw(2*id,iz)+gr_frac_trees*rsw_tree
+         en_loss=en_loss+(rsw_sun-rsw(2*id,iz))*dz_u*pb(iz+1)/(ws(id)+bs(id))/ndm
+        enddo
+       enddo
+      endif
+      rs_tot=swddir+swddif
+      beta_bw=6.283e-4*rs_tot-9.643e-2
+      beta_bw=max(beta_bw,0.)
+      conv_tree_beta=1./(1+beta_bw)
+      hfx_tree(tree_lev(iurb))=(1.-conv_tree_beta)*en_loss
+     lh_tree(tree_lev(iurb))=conv_tree_beta*en_loss
+!TREES
       rsd=rsw
 
 ! Calculation of the reflection effects          
@@ -2623,7 +2693,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 ! ----------------------------------------------------------------------
       integer id,ig,ir,iw,iz
 
-      real rtg(ndm)             ! Total radiation at ground(road) surface (solar+incoming long+outgoing long)
+      real rtg(ndm),alpha          ! Total radiation at ground(road) surface (solar+incoming long+outgoing long)
 
       real tg_tmp(ng_u)
 
@@ -2637,7 +2707,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 ! ----------------------------------------------------------------------
 
         
-      WRITE(*,*) "start subroutine surf_temp"    !_gl
+      !WRITE(*,*) "start subroutine surf_temp"    !_gl
       do id=1,nd
 
 !      Calculation for the ground surfaces
@@ -2645,8 +2715,6 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
         tg_tmp(ig)=tg(id,ig)
        end do
 !	        
-!       print*,'alag','cs',alag(1),csg(1)
-
        call soil_temp(ng_u,dzg_u,tg_tmp,ptg(id),alag,csg,      &
                      rsg(id),rlg(id),pr(1),                    &
                      dt,emg,albg,                              &
@@ -2658,11 +2726,142 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 	
       end do !id
       
-      WRITE(*,*) "end subroutine surf_temp"
+      !WRITE(*,*) "end subroutine surf_temp"
       return
       end subroutine surf_temp
 
+! ===6=8===============================================================72  
+! ===6=8===============================================================72     
 
+   subroutine surf_temp_veg(nd,pr,dt,rsg,rlg,              &
+                           tgv,ptgv,sfgv,lfgv,gfg,qg,rainbl,irri_now,gr_type,ng_u)
+! -------------------------------------------------------------------
+! Computation of the surface temperatures for walls, ground and roofs 
+! ----------------------------------------------------------------------
+
+      implicit none
+
+! ----------------------------------------------------------------------
+! INPUT:
+! ----------------------------------------------------------------------
+      real rainbl,alpha
+      integer nd,ix,iy,flag_print,ng_u                ! Number of street direction for the current urban class
+      real alag(ng_u)           ! Ground thermal diffusivity for the current urban class [m^2 s^-1] 
+
+      real csg(ng_u)            ! Specific heat of the ground material of the current urban class [J m^3 K^-1]
+
+      real dt                   ! Time step
+
+      real pr(nz_um)            ! Air pressure
+
+      real rl                   ! Downward flux of the longwave radiation
+      real rlg(ndm)             ! Long wave radiation at the ground
+
+      real rsg(ndm)             ! Short wave radiation at the ground
+
+      real sfgv(ndm)             ! Sensible heat flux from ground (road)
+
+      real lfgv(ndm)             ! Latent heat flux from ground (road)
+
+      real gfg(ndm)             ! Heat flux transferred from the surface of the ground (road) toward the interior
+    
+      real tgv(ndm,ng_u)         ! Temperature in each layer of the ground [K]
+
+      real qg(ndm,ng_u)         ! Humidity in each layer of the ground
+! ----------------------------------------------------------------------
+! OUTPUT:
+! ----------------------------------------------------------------------
+      real ptgv(ndm)             ! Ground potential temperatures
+
+! ----------------------------------------------------------------------
+! LOCAL:
+! ----------------------------------------------------------------------
+      integer id,ig,ir,iw,iz
+
+      real rtg(ndm)             ! Total radiation at ground(road) surface (solar+incoming long+outgoing long)
+
+      real tg_tmp(ng_u)
+      real qg_tmp(ng_u)
+      real cs(ng_u)
+      real qw
+      parameter(qw=0.06)
+      real cw
+      parameter(cw=4.295e6)
+      real irri_now
+      real s(ng_u)
+      real d(ng_u)
+      real k(ng_u)
+      real qg_m     ! mean soil moisture between layers
+ 
+      real, dimension(ngr_u) :: dzg_u = [0.1,2.,1.,0.5,0.3,0.2,0.1,0.1,0.05,0.0025]  !_gl
+      real, dimension(ngr_u) :: qgmax = [0.37,0.37,0.37,0.37,0.37,0.37,0.37,0.37,0.37,0.37]
+      real, dimension(ngr_u) :: smax = [-0.1,-0.1,-0.1,-0.1,-0.1,-0.1,-0.1,-0.1,-0.1,-0.1]
+      real, dimension(ngr_u) :: kmax = [2.162e-3,2.162e-3,2.162e-3,2.162e-3,2.162e-3,2.162e-3,2.162e-3,2.162e-3,2.162e-3,2.162e-3]
+      real, dimension(ngr_u) ::  b = [3.9,3.9,3.9,3.9,3.9,3.9,3.9,3.9,3.9,3.9]
+      real, dimension(ngr_u) :: cd = [1.342e6,1.342e6,1.342e6,1.342e6,1.342e6,1.342e6,1.342e6,1.342e6,1.342e6,1.342e6]
+      real emg(1)
+      real albg(1)
+      real em_g
+      real alb_g
+      real qref
+      parameter(qref=0.37)
+      integer gr_type
+
+      real draing
+      parameter(draing=0)  !No drainage on ground vegetation
+
+      real hfgrd
+
+      parameter(hfgrd=0)
+! ----------------------------------------------------------------------
+! END VARIABLES DEFINITIONS
+          
+       if(gr_type.eq.1)then
+      em_g=0.95
+      alb_g=0.3
+      elseif(gr_type.eq.2)then
+       em_g=0.83
+       alb_g=0.154
+      endif
+       
+      do id=1,nd
+      do ig=1,ng_u
+        tg_tmp(ig)=tgv(id,ig)
+        qg(id,ig) = max(qg(id,ig),1e-6) !cenlin, 11/4/2020
+        qg_tmp(ig)=qg(id,ig)
+        cs(ig)=(1-qg_tmp(ig))*cd(ig)+qg_tmp(ig)*cw
+        s(ig)=smax(ig)*(qgmax(ig)/qg_tmp(ig))**b(ig)
+        k(ig)=kmax(ig)*(qg_tmp(ig)/qgmax(ig))**(2*b(ig)+3)
+        d(ig)=-b(ig)*kmax(ig)*smax(ig)*((qg_tmp(ig)/qgmax(ig))**(b(ig)+3))/qg_tmp(ig)
+        if (log10(abs(s(ig))).le.5.1) then
+          alag(ig)=exp(-(log10(abs(s(ig)))+2.7))*4.186e2/cs(ig)
+        endif
+        if (log10(abs(s(ig))).gt.5.1) then
+          alag(ig)=0.00041*4.186e2/cs(ig)
+        endif
+
+
+        end do
+
+       call soil_temp_garden(ng_u,dzg_u,tg_tmp,ptgv(id),alag,cs,      &
+                     rsg(id),rlg(id),pr(1),                    &
+                     dt,em_g,alb_g,                              &
+                     rtg(id),sfgv(id),lfgv(id),gfg(id))
+       do ig=1,ng_u
+        tgv(id,ig)=tg_tmp(ig)
+       end do
+
+       
+
+       call soil_moist_garden(ng_u,dzg_u,qg_tmp,dt,lfgv(id),d,k,rainbl,draing,irri_now)
+                          
+       do ig=1,ng_u
+       qg(id,ig)=max(qw,min(qg_tmp(ig),qgmax(ig)))
+       end do !ig
+      end do !id
+
+      return
+      end subroutine surf_temp_veg
 ! ===6=8===============================================================72  
 ! ===6=8===============================================================72     
 
@@ -2725,7 +2924,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 ! ----------------------------------------------------------------------
       integer id,ig,ir,iw,iz
 
-      real alagr(ngr_u)           ! Green Roof thermal diffusivity for the current urban class [m^2 s^-1] 
+      real alagr(ngr_u),alpha           ! Green Roof thermal diffusivity for the current urban class [m^2 s^-1] 
 
       real rtr(ndm,nz_um)             ! Total radiation at ground(road) surface (solar+incoming long+outgoing long)
 
@@ -2852,7 +3051,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
                         uhb_u,vhb_u,thb_u,ehb_u,ss,dt,sfw,sfg,sfr,sfrpv,sfrv,lfrv,   &
                         dgr,dg,lfr,lfg,                                               &
                         sfwin,pb,bs_u,dz_u,sflev,lflev,sfvlev,lfvlev,tvb_ac,ix,iy,rsg,rs,qr,gr_frac_roof,  &
-                        pv_frac_roof,gr_flag,gr_type)                  
+                        pv_frac_roof,gr_flag,gr_type,ptgv,qg,sfgv,lfgv,gr_frac_ground,gr_frac_trees)                  
 
 ! ----------------------------------------------------------------------
 ! This routine computes the sources or sinks of the different quantities 
@@ -2911,7 +3110,15 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       real tvb_ac(2*ndm,nz_um)
       real gr_frac_roof
       real pv_frac_roof
+      real gr_frac_ground    !GARDEN
+      real gr_frac_trees
+      real ptgv(ndm)          !GARDEN
+      real qg(nd,ng_u)           !GARDEN
+      real sfgv(ndm)        !GARDEN         ! sensible heat flux from vegetation
+      real lfgv(ndm) !GARDEN
       integer gr_flag,gr_type
+    
+     !VARIABLES GARDEN NEW
 
 ! ----------------------------------------------------------------------
 ! OUTPUT:
@@ -2971,6 +3178,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       real f1,f2,f3,f4
       integer rsv(2)
       real qr_tmp(ngr_u)
+      real qg_tmp(ng_u)
       data rsv /0,1/
       real fh,ric,utot
 !------------------------------------------------------------------
@@ -3013,7 +3221,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
          endif
       enddo
 
-!        Calculation at the ground surfaces
+     !        Calculation at the ground surfaces
       do id=1,nd
       
           call flux_flat(dz,z0(id,1),ua_u(1),va_u(1),pt_u(1),pt0_u(1),  &
@@ -3026,12 +3234,28 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
            qhb_u(id,1)=0.
            lfg(id)=0.
           endif   
+         if(gr_frac_ground.eq.0.)then
          thb_u(id,1)=-(sfg(id))/(da_u(1)*cp_u)
          vhb_u(id,1)=vhb(id,1)
          uhb_u(id,1)=uhb(id,1)
          ehb_u(id,1)=ehb(id,1)
          qhb_u(id,1)=-lfg(id)/(da_u(1)*latent)
-         do iz=2,nz
+         else
+         do il=1,ng_u
+         qg_tmp(il)=qg(id,il)
+         enddo
+         call flux_flat_ground(ix,iy,dz,z0v,ua_u(1),va_u(1),pt_u(1),pt0_u(1),  &
+                           ptgv(id),uhbv(id,1),                            &
+                           vhbv(id,1),sfgv(id),lfgv(id),ehbv(id,1),da_u(1),qv_u(1),pr_u(1),&
+                           rsg(id),qg_tmp,resg,rsveg,f1,f2,f3,f4,fh,ric,utot,gr_type)  
+                                          
+         thb_u(id,1)=-((1.-gr_frac_ground)*sfg(id)+gr_frac_ground*sfgv(id))/(da_u(1)*cp_u)
+         vhb_u(id,1)=(1.-gr_frac_ground)*vhb(id,1)+gr_frac_ground*vhbv(id,1)
+         uhb_u(id,1)=(1.-gr_frac_ground)*uhb(id,1)+gr_frac_ground*uhbv(id,1)
+         ehb_u(id,1)=(1.-gr_frac_ground)*ehb(id,1)+gr_frac_ground*ehbv(id,1)
+         qhb_u(id,1)=-((1.-gr_frac_ground)*lfg(id)+gr_frac_ground*lfgv(id))/(da_u(1)*latent)
+         endif
+          do iz=2,nz
             if(ss(iz).gt.0)then
             
                call flux_flat(dz,z0(id,iz),ua_u(iz),&
@@ -3048,10 +3272,11 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
          do il=1,ngr_u
            qr_tmp(il)=qr(id,iz,il)
          enddo
-               call flux_flat_roof(dz,z0v,ua_u(iz),va_u(iz),pt_u(iz),pt0_u(iz),  &
-                       ptrv(id,iz),uhbv(id,iz),                            &
-                       vhbv(id,iz),sfrv(id,iz),lfrv(id,iz),ehbv(id,iz),da_u(iz),qv_u(iz),pr_u(iz),rs,qr_tmp, & 
-                       resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
+          call flux_flat_roof(dz,z0v,ua_u(iz),va_u(iz),pt_u(iz),pt0_u(iz),  &
+           ptrv(id,iz),uhbv(id,iz),                            &
+           vhbv(id,iz),sfrv(id,iz),lfrv(id,iz),ehbv(id,iz),da_u(iz),qv_u(iz),pr_u(iz), &
+           rs,qr_tmp,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
+         
          sfr(id,iz)=sfr(id,iz)+pv_frac_roof*sfrpv(id,iz) 
          thb_u(id,iz)=-((1.-gr_frac_roof)*sfr(id,iz)+gr_frac_roof*sfrv(id,iz))/(da_u(iz)*cp_u)
          vhb_u(id,iz)=(1.-gr_frac_roof)*vhb(id,iz)+gr_frac_roof*vhbv(id,iz)
@@ -3075,8 +3300,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
                ehb_u(id,iz) = 0.0
                qhb_u(id,iz) = 0.0
             endif
-         enddo
-         
+         enddo    
          
 
 !        Calculation at the wall surfaces        
@@ -3138,7 +3362,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
          enddo !ibui
          
       end do !id
-                
+                !write(*,*) "sfr subroutine building", sfr
       return
       end subroutine buildings
       
@@ -3149,8 +3373,10 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
         subroutine urban_meso(nd,kms,kme,kts,kte,nz_u,z,dz,z_u,pb,ss,bs,ws,sf,vl,    &
                              uva_u,vva_u,uvb_u,vvb_u,tva_u,tvb_u,evb_u, &       
                              uhb_u,vhb_u,thb_u,ehb_u,qhb_u,qvb_u,       &      
-                             a_u,a_v,a_t,a_e,b_u,b_v,b_t,b_e,b_q,tvb_ac,b_ac)           
-
+                             a_u,a_v,a_t,a_e,b_u,b_v,b_t,b_e,b_q,tvb_ac,b_ac, & 
+!TREES
+                             hfx_tree,lh_tree,iurb)
+!TREES
 ! ----------------------------------------------------------------------
 !  This routine interpolates the parameters from the "urban grid" to the
 !  "mesoscale grid".
@@ -3187,6 +3413,11 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       real tvb_ac(2*ndm,nz_um)
       real ehb_u(ndm,nz_um)   ! Energy (TKE)       Horizontal surfaces, B (explicit) term
       real evb_u(2*ndm,nz_um)   ! Energy (TKE)         Vertical surfaces, B (explicit) term
+!TREES
+      real hfx_tree(nz_um),lh_tree(nz_um)
+      integer iurb
+!TREES
+
 !
 !New variables for BEM
 !
@@ -3210,6 +3441,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       real b_ac(kms:kme)
       real b_e(kms:kme)              ! Explicit component of the TKE sources or sinks
       real b_q(kms:kme)               ! Explicit component of the humidity sources or sinks
+   
 ! ----------------------------------------------------------------------
 ! LOCAL:
 ! ----------------------------------------------------------------------
@@ -3362,7 +3594,14 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       enddo
       
 
-      
+      !TREES
+      do iz=kts,kte
+       if(z_u(tree_lev(iurb)).gt.z(iz).and.z_u(tree_lev(iurb)).le.z(iz+1))then
+        b_t(iz)=b_t(iz)+hfx_tree(tree_lev(iurb))/dz(iz)/vl(iz)
+        b_q(iz)=b_q(iz)+lh_tree(tree_lev(iurb))/dz(iz)/vl(iz)
+       endif
+      enddo
+      !TREES
       return
       end subroutine urban_meso
 
@@ -3580,11 +3819,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
          
       return
       end subroutine shadow_mas
-
-
-
-
-         
+        
 ! ===6=8===============================================================72     
 ! ===6=8===============================================================72     
 
@@ -3973,8 +4208,8 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
                         irow=j
                         icol=k
                      endif
-                  elseif(ipiv(k).gt.1)then
-                     !CALL wrf_error_fatal('singular matrix in gaussj')    !WRF_error_gl
+                 ! elseif(ipiv(k).gt.1)then
+                 !    pause 'singular matrix in gaussj'
                   endif
                enddo
             endif
@@ -3994,7 +4229,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
             b(icol)=dum
           
          endif
-         
+         !!! pause 'singular matrix in gaussj'
          !!! if(a(icol,icol).eq.0) !CALL wrf_error_fatal('singular matrix in gaussj')  ! WRF_error_gl
          
          pivinv=1./a(icol,icol)
@@ -4022,8 +4257,90 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       
       return
       end subroutine gaussj
+! ===6=8===============================================================72     
+! ===6=8===============================================================72     
+
+      subroutine soil_moist_garden(nz,dz,qv,dt,lf,d,k,rainbl,drain,irri_now)
+
+! ----------------------------------------------------------------------
+! This routine solves the Fourier diffusion equation for heat in 
+! the material (wall, roof, or ground). Resolution is done implicitely.
+! Boundary conditions are: 
+! - fixed temperature at the interior
+! - energy budget at the surface
+! ----------------------------------------------------------------------
+
+      implicit none
 
 
+
+! ----------------------------------------------------------------------
+! INPUT:
+! ----------------------------------------------------------------------
+      integer nz,ix,iy,id                ! Number of layers
+      real dt                   ! Time step
+      real lf                   ! Latent heat flux at the surface
+      real qv(nz)               ! Moisture in each layer [K]
+      real dz(nz)               ! Layer sizes [m]
+      real rainbl               ! Rainfall [mm]
+      real d(nz)                ! Soil water diffusivity
+      real k(nz)                ! Hydraulic conductivity
+      real gr                   ! Dummy variable 
+      real drain
+      real irri_now
+! ----------------------------------------------------------------------
+! OUTPUT:
+! ----------------------------------------------------------------------
+
+
+! ----------------------------------------------------------------------
+! LOCAL:
+! ----------------------------------------------------------------------
+      integer iz
+      real a(nz,3)
+      real alpha
+      real c(nz)
+      real cddz(nz+2)
+      real dw     !water density Kg/m3
+      parameter(dw=1000.)
+!----------------------------------------------------------------------
+! END VARIABLES DEFINITIONS
+! ----------------------------------------------------------------------
+      alpha=rainbl/(dw*dt)+lf/latent/dw+irri_now/dw
+      cddz(1)=0.
+      k(1)=0.
+      do iz=2,nz
+         cddz(iz)=2.*d(iz)/(dz(iz)+dz(iz-1))
+      enddo
+      do iz=1,1
+       a(iz,1)=0.
+       a(iz,2)=1.
+       a(iz,3)=0.
+       c(iz)=qv(iz)
+      enddo
+      do iz=2,2
+       a(iz,1)=0.
+       a(iz,2)=1.+dt*(cddz(iz+1))/dz(iz)
+       a(iz,3)=-cddz(iz+1)*dt/dz(iz)
+       c(iz)=qv(iz)+dt*(k(iz+1)-k(iz))/dz(iz)
+      enddo
+        do iz=3,nz-1
+         a(iz,1)=-cddz(iz)*dt/dz(iz)
+         a(iz,2)=1.+dt*(cddz(iz)+cddz(iz+1))/dz(iz)
+         a(iz,3)=-cddz(iz+1)*dt/dz(iz)
+         c(iz)=qv(iz)+dt*(k(iz+1)-k(iz))/dz(iz)
+        enddo
+      a(nz,1)=-dt*cddz(nz)/dz(nz)
+      a(nz,2)=1.+dt*cddz(nz)/dz(nz)
+      a(nz,3)=0.
+      c(nz)=qv(nz)+dt*alpha/dz(nz)-dt*(k(nz-1))/dz(nz)
+
+      call invert(nz,a,c,qv)
+
+
+
+      return
+      end subroutine soil_moist_garden
 
 ! ===6=8===============================================================72     
 ! ===6=8===============================================================72     
@@ -4112,8 +4429,94 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 ! ===6=8===============================================================72     
   
 
+      subroutine soil_temp_garden(nz,dz,temp,pt,ala,cs,                       &
+                          rs,rl,press,dt,em,alb,rt,sf,lf,gf)
+
+! ----------------------------------------------------------------------
+! This routine solves the Fourier diffusion equation for heat in 
+! the material (wall, roof, or ground). Resolution is done implicitely.
+! Boundary conditions are: 
+! - fixed temperature at the interior
+! - energy budget at the surface
+! ----------------------------------------------------------------------
+
+      implicit none
+
+
+
+! ----------------------------------------------------------------------
+! INPUT:
+! ----------------------------------------------------------------------
+      integer nz,ix,iy          ! Number of layers
+      real ala(nz)              ! Thermal diffusivity in each layers [m^2 s^-1] 
+      real alb                  ! Albedo of the surface
+      real cs(nz)               ! Specific heat of the material [J m^3 K^-1]
+      real dt                   ! Time step
+      real em                   ! Emissivity of the surface
+      real press                ! Pressure at ground level
+      real rl                   ! Downward flux of the longwave radiation
+      real rs                   ! Solar radiation
+      real sf                   ! Sensible heat flux at the surface
+      real lf                   ! Latent heat flux at the surface
+      real temp(nz)             ! Temperature in each layer [K]
+      real dz(nz)               ! Layer sizes [m]
+      real rs_eff
+      real rl_eff
+! ----------------------------------------------------------------------
+! OUTPUT:
+! ----------------------------------------------------------------------
+      real gf                   ! Heat flux transferred from the surface toward the interior
+      real pt                   ! Potential temperature at the surface
+      real rt                   ! Total radiation at the surface (solar+incoming long+outgoing long)
+
+! ----------------------------------------------------------------------
+! LOCAL:
+! ----------------------------------------------------------------------
+      integer iz
+      real a(nz,3)
+      real alpha
+      real c(nz)
+      real cddz(nz+2)
+      real tsig
+
+! ----------------------------------------------------------------------
+! END VARIABLES DEFINITIONS
+! ----------------------------------------------------------------------
+      rl_eff=em*rl
+      rs_eff=rs
+      tsig=temp(nz)
+      alpha=(1.-alb)*rs_eff+rl_eff-em*sigma*(tsig**4)+sf+lf
+      cddz(1)=ala(1)/dz(1)
+      do iz=2,nz
+         cddz(iz)=2.*ala(iz)/(dz(iz)+dz(iz-1))
+      enddo
+      a(1,1)=0.
+      a(1,2)=1.
+      a(1,3)=0.
+      c(1)=temp(1)
+      do iz=2,nz-1
+         a(iz,1)=-cddz(iz)*dt/dz(iz)
+         a(iz,2)=1.+dt*(cddz(iz)+cddz(iz+1))/dz(iz)
+         a(iz,3)=-cddz(iz+1)*dt/dz(iz)
+         c(iz)=temp(iz)
+      enddo
+      a(nz,1)=-dt*cddz(nz)/dz(nz)
+      a(nz,2)=1.+dt*cddz(nz)/dz(nz)
+      a(nz,3)=0.
+      c(nz)=temp(nz)+dt*alpha/cs(nz)/dz(nz)
+      call invert(nz,a,c,temp)
+
+      pt=temp(nz)*(press/1.e+5)**(-rcp_u)
+
+      rt=(1.-alb)*rs_eff+rl_eff-em*sigma*(tsig**4.)
+
+      gf=(1.-alb)*rs_eff+rl_eff-em*sigma*(tsig**4.)+sf+lf
+      return
+      end subroutine soil_temp_garden
+
+! ===6=8===============================================================72
 ! ===6=8===============================================================72     
-! ===6=8===============================================================72     
+
        
       subroutine soil_temp_veg(heflro,nz,dz,temp,pt,ala,cs,                       &
                           rs,rl,press,dt,em,alb,rt,sf,lf,gf,pv_frac_roof,tpv)
@@ -4199,7 +4602,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       a(nz,2)=1.+dt*cddz(nz)/dz(nz)
       a(nz,3)=0.
       c(nz)=temp(nz)+dt*alpha/cs(nz)/dz(nz) 
-      
+     
       call invert(nz,a,c,temp)
 
       pt=temp(nz)*(press/1.e+5)**(-rcp_u)
@@ -4231,7 +4634,7 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 ! ----------------------------------------------------------------------
 ! INPUT:
 ! ----------------------------------------------------------------------
-      integer nz                ! Number of layers
+      integer nz,ix,iy                ! Number of layers
       real ala(nz)              ! Thermal diffusivity in each layers [m^2 s^-1] 
       real alb                  ! Albedo of the surface
       real cs(nz)               ! Specific heat of the material [J m^3 K^-1]
@@ -4453,9 +4856,9 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 ! ===6=8===============================================================72
 ! ===6=8===============================================================72
 
-      subroutine flux_flat_ground(dz,z0,ua,va,pt,pt0,ptg,                     &
-                          uhb,vhb,sf,ehb,da,qv,pr,rsg,qg,resg,rsveg,f1,f2,f3,f4,fh,ric,utot,gr_type)
-                                
+      subroutine flux_flat_ground(ix,iy,dz,z0,ua,va,pt,pt0,ptg,                     &
+                          uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qg,resg,rsveg,f1,f2,f3,f4,fh,ric,utot,gr_type)
+
 ! ----------------------------------------------------------------------
 !           Calculation of the flux at the ground 
 !           Formulation of Louis (Louis, 1979)       
@@ -4537,21 +4940,19 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       parameter(qref=0.37)  
       real hs
       parameter(hs=36.35)
- 
       real dzg_u(ng_u)          ! Layer sizes in the ground
-
-      data dzg_u /0.2,0.12,0.08,0.05,0.03,0.02,0.02,0.01,0.005,0.0025/
-      
+      !data dzg_u  /0.1,0.003,0.06,0.003,0.5,0.3,0.2,0.1,0.05,0.0025/
+      data dzg_u /0.1,0.003,0.06,0.003,0.05,0.04,0.02,0.0125,0.005,0.0025/
       real gx,dzg_tot
-      integer gr_type,iz
+      integer gr_type,iz,ix,iy
 ! ----------------------------------------------------------------------
-! END VARIABLES DEFINITIONS
+! END VARIABLES DEFINITIONS - flux_flat_ground
 ! ----------------------------------------------------------------------
       z0t=z0/10.
       if(gr_type.eq.1)then
       rsmin=40.
       rsmax=5000.
-      lai=2.
+      lai=4.
       elseif(gr_type.eq.2)then
       rsmin=150.
       rsmax=5000.
@@ -4567,19 +4968,10 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
 ! compute the bulk Richardson Number
 
       zz=dz/2.
-   
-!        if(tstar.lt.0.)then
-!         wstar=(-ustar*tstar*g*hii/pt)**(1./3.)
-!        else
-!         wstar=0.
-!        endif
-!        
-!      if (utot.le.0.7*wstar) utot=max(0.7*wstar,0.00001)
 
       utot=max(utot,0.01)
           
       ric=2.*g_u*zz*(pt-ptg)/((pt+ptg)*(utot**2))
-              
       aa=vk/log(zz/z0)
       ah=vk/log(zz/z0t)
 
@@ -4615,22 +5007,21 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       f3=1.-0.0016*(25.-ta)**2.
       f4=0.
       dzg_tot=0.
-      do iz=1,ng_u
+      do iz=6,ng_u
        gx=(qg(iz)-qw)/(qref-qw)
        if (gx.gt.1)gx=1.
        if (gx.lt.0)gx=0.
        f4=f4+gx*dzg_u(iz)
        dzg_tot=dzg_tot+dzg_u(iz)
       enddo
+       
       f4=f4/dzg_tot
 
       rsveg=min(rsmin/max(lai*f1*f2*f3*f4,1e-9),rsmax)
       resg= rr/(aa*aa*utot*fh)
-
-
+    
       fbqq=-(qv-qvsg)/(resg+rsveg)
-      
-               
+     
       ustar=(-fbuw)**.5
       tstar=-fbpt/ustar
       qstar=-fbqq/ustar
@@ -4643,8 +5034,6 @@ call BEP1D(itimestep,ix,iy,iurb,kms,kme,kts,kte,z1D,dt,ua1D,va1D,pt1D,da1D,pr1D,
       vhb=-ustar*ustar*va/utot 
       sf= ustar*tstar*da*cp_u   
       lf= ustar*qstar*da*latent
-       
-!     thb= 0.      
       ehb=buu
 !!!!!!!!!!!!!!!
          
@@ -4745,15 +5134,14 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
       real gx,dzgr_tot
       integer gr_type,iz
 ! ----------------------------------------------------------------------
-! END VARIABLES DEFINITIONS
-
+! END VARIABLES DEFINITIONS - flux_flat_roof
 ! ----------------------------------------------------------------------
       z0t=z0/10.
       if(gr_type.eq.1)then
       rsmin=40.
       rsmax=5000.
-      lai=2.
-      elseif(gr_type.eq.2)then
+      lai=2.   !_gl standard:2
+       elseif(gr_type.eq.2)then
       rsmin=150.
       rsmax=5000.
       lai=3.
@@ -4997,7 +5385,7 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
       integer iz_u,id,ilu,iurb
 
       real dtot
-      real hbmax
+      real hbmax,som
 
 ! -----------------------------------------------------------------------
 !     This routine initialise the urban paramters for the BEP module
@@ -5010,7 +5398,7 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
       z_u=0.
       ss_u=0.
       pb_u=0.
-     WRITE(*,*) "start of icBEP"     !_gl
+     !WRITE(*,*) "start of icBEP"     !_gl
 ! Computation of the urban levels height
 
       z_u(1)=0.
@@ -5067,7 +5455,7 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
          enddo
       end do
 
-      WRITE(*,*) "end of icBEP"    !_gl
+      !WRITE(*,*) "end of icBEP"    !_gl
       return
       end subroutine icBEP
 
@@ -5300,18 +5688,18 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
       return
       end subroutine fnrms
   ! ===6=8===============================================================72  
-     
         SUBROUTINE init_para(alag_u,alaw_u,alar_u,csg_u,csw_u,csr_u,&
         twini_u,trini_u,tgini_u,albg_u,albw_u,albr_u,albwin_u,emg_u,emw_u,&
         emr_u,emwind_u,z0g_u,z0r_u,nd_u,strd_u,drst_u,ws_u,bs_u,h_b,d_b,  &
         cop_u,pwin_u,beta_u,sw_cond_u,time_on_u,time_off_u,targtemp_u,    &
         bldac_frc_u,cooled_frc_u,                                         &
         gaptemp_u, targhum_u,gaphum_u,perflo_u,                           &
-        gr_frac_roof_u,pv_frac_roof_u,                                    &
+        gr_frac_roof_u,pv_frac_roof_u,gr_frac_ground_u,gr_frac_trees_u,   &
         hsesf_u,hsequip,irho,gr_flag_u,gr_type_u,TBLEND_TBL,TRLEND_TBL,   &
         TGLEND_TBL,ALBB_TBL,ALBR_TBL,ALBG_TBL,EPSB_TBL,EPSR_TBL,EPSG_TBL, &
         Z0R_TBL,Z0G_TBL,beta_tbl,cop_tbl,bldac_frc_tbl,cooled_frc_tbl,    & 
-        gr_frac_roof_tbl,pwin_tbl,sw_cond_tbl,targtemp_tbl,targhum_tbl,   & 
+        gr_frac_roof_tbl,gr_frac_ground_tbl,gr_frac_trees_tbl,              &
+        pwin_tbl,sw_cond_tbl,targtemp_tbl,targhum_tbl,   & 
         gaptemp_tbl,time_off_tbl,time_on_tbl,CAPB_TBL,CAPR_TBL,CAPG_TBL,  &  
         AKSB_TBL,AKSR_TBL,AKSG_TBL,gaphum_tbl,perflo_tbl,pv_frac_roof_tbl, &
         hsesf_tbl,gr_type_tbl,gr_flag_tbl,STREET_DIRECTION_TBL,STREET_WIDTH_TBL, & 
@@ -5339,6 +5727,8 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
      real bldac_frc_tbl(nurbm)
      real cooled_frc_tbl(nurbm)
      real gr_frac_roof_tbl(nurbm)
+     real gr_frac_ground_tbl(nurbm)
+     real gr_frac_trees_tbl(nurbm)
      real pwin_tbl(nurbm)
      integer sw_cond_tbl(nurbm)
      real targtemp_tbl(nurbm)
@@ -5420,6 +5810,8 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
       real, intent(out) :: gaphum_u(nurbm)
       real, intent(out) :: perflo_u(nurbm)
       real, intent(out) :: gr_frac_roof_u(nurbm)
+      real, intent(out) :: gr_frac_ground_u(nurbm)
+      real, intent(out) :: gr_frac_trees_u(nurbm)
       real, intent(out) :: pv_frac_roof_u(nurbm)
       real, intent(out) :: hsesf_u(nurbm)
       real, intent(out) :: hsequip(24)
@@ -5439,17 +5831,14 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
           nd_u(iu)=0
        enddo
 
-       csw_u=CAPB_TBL / (( 1.0 / 4.1868 ) * 1.E-6)
-       csr_u=CAPR_TBL / (( 1.0 / 4.1868 ) * 1.E-6)
-       csg_u=CAPG_TBL / (( 1.0 / 4.1868 ) * 1.E-6)
+       csw_u=CAPB_TBL
+       csr_u=CAPR_TBL
+       csg_u=CAPG_TBL
+     !WRITE(*,*) "csw_u csr_u csg_u pre ciclo", csw_u, csr_u, csg_u
        do i=1,icate
-         alaw_u(i)=AKSB_TBL(i) / csw_u(i) / (( 1.0 / 4.1868 ) * 1.E-2)
-         alar_u(i)=AKSR_TBL(i) / csr_u(i) / (( 1.0 / 4.1868 ) * 1.E-2)
-         alag_u(i)=AKSG_TBL(i) / csg_u(i) / (( 1.0 / 4.1868 ) * 1.E-2)
- !        WRITE(*,*) "CAPB_TBL", CAPB_TBL
- !        WRITE(*,*) "CAPR_TBL", CAPR_TBL
- !        WRITE(*,*) "CAPG_TBL", CAPG_TBL
- !        write(*,*) 'lettura proprietà termiche', alaw_u,alar_u,alag_u,csw_u,csr_u,csg_u
+         alaw_u(i)=AKSB_TBL(i) / csw_u(i) 
+         alar_u(i)=AKSR_TBL(i) / csr_u(i) 
+         alag_u(i)=AKSG_TBL(i) / csg_u(i) 
        enddo
        twini_u=TBLEND_TBL
        trini_u=TRLEND_TBL
@@ -5479,6 +5868,8 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
        gaphum_u = gaphum_tbl
        perflo_u = perflo_tbl
        gr_frac_roof_u =gr_frac_roof_tbl
+       gr_frac_ground_u =gr_frac_ground_tbl
+       gr_frac_trees_u =gr_frac_trees_tbl
        gr_flag_u=gr_flag_tbl
        pv_frac_roof_u = pv_frac_roof_tbl
        hsesf_u = hsesf_tbl
@@ -5495,7 +5886,6 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
            drst_u(i,iu)=STREET_DIRECTION_TBL(i,iu) * pi/180.
            ws_u(i,iu)=STREET_WIDTH_TBL(i,iu)
            bs_u(i,iu)=BUILDING_WIDTH_TBL(i,iu)
-          ! write(*,*) 'indici direzione larghezza ampiezza', i,iu	!_gl
          enddo
        enddo
        do iu=1,ICATE
@@ -5521,9 +5911,9 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
        do iu=1,nurb  
           emwind_u(iu)=0.9                       
           call albwindow(albwin_u(iu))
-          WRITE(*,*) 'emwind', iu    !_gl  
+         ! WRITE(*,*) 'emwind', iu    !_gl  
        enddo
-       
+       write(*,*) "fine routine init_para"
        return
        end subroutine init_para
 !==============================================================
@@ -5602,12 +5992,12 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
       integer ix,iy,iwrong
 
          iwrong=1
-      write(*,*) "start subroutine upward_rad"    !_gl
+      !write(*,*) "start subroutine upward_rad"    !_gl
       do iz=1,nzu+1
       do id=1,ndu
       if(tr_av(id,iz).lt.100.)then
               write(203,*) tr_av(id,iz)
-              write(*,*)'in upward_rad ',iz,id,iw,tr_av(id,iz)
+              !write(*,*)'in upward_rad ',iz,id,iw,tr_av(id,iz)
               iwrong=0
       endif     
       enddo
@@ -5624,9 +6014,10 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
       do id=1,ndu          
        rl_emit=rl_emit-( emg_u*sigma*(tg_av(id)**4.)+(1-emg_u)*rlg(id))*ws(id)/(ws(id)+bs(id))/ndu
        rl_inc=rl_inc+rlg(id)*ws(id)/(ws(id)+bs(id))/ndu       
-       rs_abs=rs_abs+(1.-albg_u)*rsg(id)*ws(id)/(ws(id)+bs(id))/ndu
-         gfl=(1.-albg_u)*rsg(id)+emg_u*rlg(id)-emg_u*sigma*(tg_av(id)**4.)+sfg(id)+lfg(id)
-         grdflx_urb=grdflx_urb-gfl*ws(id)/(ws(id)+bs(id))/ndu  
+       rs_abs=rs_abs+(1.-albg_u)*rsg(id)*ws(id)/(ws(id)+bs(id))/ & 
+             ndu*(1-gr_frac_ground_tbl(1))+(1.-alb_gr)*rsg(id)*ws(id)/(ws(id)+bs(id))/ndu*gr_frac_ground_tbl(1)  
+       gfl=(1.-albg_u)*rsg(id)+emg_u*rlg(id)-emg_u*sigma*(tg_av(id)**4.)+sfg(id)+lfg(id)
+       grdflx_urb=grdflx_urb-gfl*ws(id)/(ws(id)+bs(id))/ndu  
  
          do iz=2,nzu
              rl_emit=rl_emit-(emr_u*sigma*(1.-pv_frac_roof)*tr_av(id,iz)**4.+0.79*sigma*pv_frac_roof*tpvlev(id,iz)**4+ &
@@ -5659,14 +6050,11 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
                
            
             grdflx_urb=grdflx_urb-(gfl*(1.-pwin)+pwin*gflwin)*dz_u*pb(iz+1)/(ws(id)+bs(id))/ndu
-           ! write(*,*) "loop subroutine upward_rad"    !_gl
          enddo
           
       enddo
         emiss=(emg_u+emw_u+emr_u)/3.
         rl_up=(rl_inc+rl_emit)-rld
-       ! write(*,*) "end subroutine upward_rad"    !_gl
-         
       return
 
       END SUBROUTINE upward_rad
@@ -5774,7 +6162,9 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
 !====================================================================72  
 
       subroutine icBEP_XY(iurb,fww_u,fwg_u,fgw_u,fsw_u,             &
-                          fws_u,fsg_u,ndu,strd,ws,nzu,z_u)                               
+                          fws_u,fsg_u,ndu,strd,ws,nzu,z_u, &
+                          mrw_dir,mrg_dir,mrs_dir,xpos) ! WRF COMFORT
+
 
       implicit none       
         
@@ -5803,7 +6193,15 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
       real fws_u(nz_um,ndm,nurbm)               !  from sky to wall
       real fsg_u(ndm,nurbm)                     !  from sky to ground
 
-! -----------------------------------------------------------------------
+! WRF COMFORT start
+!   mrw,mrg,mrs are the view factors used to compute the long wave
+!   and the short wave contributions for the mean radiant temperature
+      real mrw_dir(nz_um,2*ndm,npos)         !  from wall
+      real mrg_dir(2*ndm,npos)               !  from ground
+      real mrs_dir(2*ndm,npos)               !  from sky
+      real xpos(ndm,npos)
+! WRF COMFORT end
+
 !     Local
 !------------------------------------------------------------------------
 
@@ -5815,7 +6213,7 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
 !
 !Initialize
 !
-      WRITE(*,*) "start subroutine ic_BEP_xy"   !_gl
+      !WRITE(*,*) "start subroutine ic_BEP_xy"   !_gl
       fww_u=0.
       fwg_u=0.
       fgw_u=0.
@@ -5823,13 +6221,40 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
       fws_u=0.
       fsg_u=0.
       
+! WRF COMFORT start
+! xpos is distance from Western wall in a N-S street, or from the Northern wall
+! in a E-W street
+         !xpos(1,1)=ws(1)*16.7/100.
+         xpos(1,1)=min(1.5,ws(1)/2.)
+         xpos(1,2)=ws(1)/2.
+         !xpos(1,3)=ws(1)*(100.-16.7)/100.
+         xpos(1,3)=max(ws(1)-1.5,ws(1)/2.)
+         !xpos(2,1)=ws(2)*16.7/100.
+         xpos(2,1)=min(1.5,ws(2)/2.)
+         xpos(2,2)=ws(2)/2.
+         !xpos(2,3)=ws(2)*(100.-16.7)/100.
+         xpos(2,3)=max(ws(2)-1.5,ws(2)/2.)
+         !write(*,*)'xpos 1',xpos(1,1),xpos(1,2),xpos(1,3),ws(1)
+         !write(*,*)'xpos 2',xpos(2,1),xpos(2,2),xpos(2,3),ws(2)
+         mrw_dir=0.
+         mrg_dir=0.
+         mrs_dir=0.
+
+! WRF COMFORT end
+
       do id=1,ndu
 
             call view_factors(iurb,nzu,id,strd(id),z_u,ws(id),  &    
                               fww_u,fwg_u,fgw_u,fsg_u,fsw_u,fws_u) 
+! WRF COMFORT start
+            call view_factors_mr_dir(id,iurb,nzu,strd(id),   &
+                            z_u,xpos,ws(id),                      &
+                            mrw_dir,mrg_dir,mrs_dir)
+! WRF COMFORT end
+
       
       enddo               
-      WRITE(*,*) "end subroutine ic_BEP_xy"    !_gl
+      !WRITE(*,*) "end subroutine ic_BEP_xy"    !_gl
       return       
       end subroutine icBEP_XY
 !====================================================================72
@@ -5953,8 +6378,1737 @@ uhb,vhb,sf,lf,ehb,da,qv,pr,rsg,qr,resg,rsveg,f1,f2,f3,f4,gr_type,pv_frac_roof)
        return
        end subroutine icBEPHI_XY
 !====================================================================72
+!WRF COMFORT start
+! ===6=8===============================================================72
+
+      subroutine modif_rad_mr(iurb,nd,nz_u,z,ws,drst,strd,ss,pb,    &
+                          tw,tg_av,twlev,albg,albw,emw,emg,pwin,albwin,   &
+                          emwin,            &
+                          mrw_dir,mrg_dir,mrs_dir,xpos,             &
+                          zr,deltar,ah,xlat,                          &
+                          rs,rl,rsw,rsg,rlw,rlg,ix,iy,tmr_dir, &
+                          gr_frac_trees) !CROCUS
+
+! ----------------------------------------------------------------------
+! This routine computes the modification of the short wave and
+!  long wave radiation due to the buildings for the estimation of the
+! mean radiant temperature for a man in the middle of the street
+! ----------------------------------------------------------------------
+
+      implicit none
+
+
+! ----------------------------------------------------------------------
+! INPUT:
+! ----------------------------------------------------------------------
+      integer iurb              ! current urban class
+      integer nd                ! Number of street direction for the current urban class
+      integer nz_u              ! Number of layer in the urban grid
+      real z(nz_um)           ! Height of the urban grid levels
+      real ws(ndm)              ! Street widths of the current urban class
+      real drst(ndm)            ! street directions for the current urban class
+      real strd(ndm)            ! Street lengths for the current urban class
+      real ss(nz_um)          ! probability to have a building with height h
+      real pb(nz_um)          ! probability to have a building with an height equal
+      real tw(2*ndm,nz_um)    ! Temperature in each layer of the wall [K]
+      real tg_av(ndm)         ! Temperature in each layer of the ground [K]
+      real albg                 ! Albedo of the ground for the current urban class
+      real albw                 ! Albedo of the wall for the current urban class
+      real emg                  ! Emissivity of ground for the current urban class
+      real emw                  ! Emissivity of wall for the current urban class
+
+
+      real mrw_dir(nz_um,2*ndm,npos)       ! View factors from wall
+      real mrg_dir(2*ndm,npos)             ! View factors from ground
+      real mrs_dir(2*ndm,npos)             ! View factors from sky
+
+      real ah                   ! Hour angle (it should come from the radiation routine)
+      real zr                   ! zenith angle
+      real deltar               ! Declination of the sun
+      real xlat,xlat_r               ! latitude
+      real rs                   ! solar radiation
+      real rl                   ! downward flux of the longwave radiation
+!
+!New variables BEM
+!
+      real twlev(2*ndm,nz_um)         ! Window temperature in BEM [K]
+      real pwin                       ! Coverage area fraction of windows in the walls of the buildings
+      real albwin                     ! Albedo of the windows for the current urban class
+      real emwin                      ! Emissivity of the windows for the current urban class
+      real alb_av                     ! Averaged albedo (window and wall)
+      real rlg(ndm)             ! Long wave radiation at the ground
+      real rlw(2*ndm,nz_um)     ! Long wave radiation at the walls
+      real rsg(ndm)             ! Short wave radiation at the ground
+      real rsw(2*ndm,nz_um)     ! Short wave radiation at the walls
+
+      real rl_down,rs_down
+
+      real time_bep
+      real gr_frac_trees !CROCUS
+!
+      integer ix,iy,idr,ipos
+! ----------------------------------------------------------------------
+! OUTPUT:
+! ----------------------------------------------------------------------
+!TREES
+      real tmr_dir(ndm,npos,2)           ! mean radiant temperature
+      real smr_shad
+!TREES
+
+
+
+! ----------------------------------------------------------------------
+! LOCAL:
+! ----------------------------------------------------------------------
+
+      integer id,iz
+
+!
+      real rsm_dir(2*ndm,npos),rlm_dir(2*ndm,npos),rrm_dir(2*ndm,npos)
+
+!!! IMPORTANT. id=1 means looking at West, id=2, looking at East in a N-S road
+!!!            id=3 means looking at North, id=4 lookig at South in a E-W road
+!!!
+
+      real rsup_dir(2*ndm,npos)
+      real xpos(ndm,npos)
+      real st4,lmr,smr,gamma,fp,prova,smd,arg
+
+!  Calculation of the shadow effects
+
+      call shadow_mas_mr_boston(nd,nz_u,zr,deltar,ah,drst,ws,ss,pb,z,  &
+                     rs,rsm_dir,xpos,iurb,xlat)
+
+       !write(93,*)rsm_dir(1,1),rsm_dir(2,1),rsm_dir(1,3),rsm_dir(2,3)
+       !write(*,*)'rsm',rsm_dir(1,1),rs
+
+
+      call shadow_mas_mr_up(nd,nz_u,zr,deltar,ah,drst,ws,ss,pb,z,  &
+                      rs,rsup_dir,xpos,iurb)
+
+       do id=1,2*ndm
+        do ipos=1,npos
+         rrm_dir(id,ipos)=0!rsm_dir(id,ipos)
+        enddo
+       enddo
+
+! Calculation of the reflection effects
+      do id=1,nd
+         call long_rad_mr(iurb,nz_u,id,emw,emg,emwin,pwin,twlev,      &
+                      mrw_dir,mrg_dir,mrs_dir,tg_av,tw,      &
+                      rlg,rlw,rl,pb,rlm_dir)
+
+         alb_av=pwin*albwin+(1.-pwin)*albw
+
+         call short_rad_mr(iurb,nz_u,id,alb_av,albg, &
+                      mrw_dir,mrg_dir,mrs_dir, &
+                      rsg,rsw,pb,rrm_dir)
+      enddo
+
+      st4=0.
+      lmr=0.
+      smr=0.
+      smd=0.
+
+
+! let compute the mean radiant temperature!!
+      do id=1,ndm
+       rl_down=emg*sigma*(tg_av(id)**4.)+(1-emg)*rlg(id)
+       rs_down=albg*rsg(id)
+       !write(*,*)rl_down,rs_down
+       do ipos=1,npos
+        lmr=0.88*(rlm_dir(2*id-1,ipos)+rlm_dir(2*id,ipos))/2.+0.06*rl+0.06*rl_down
+        smr=0.88*((rsm_dir(2*id-1,ipos)+rsm_dir(2*id,ipos))/2.+(rrm_dir(2*id-1,ipos)+ &
+        rrm_dir(2*id,ipos))/2.)+0.06*(rsup_dir(2*id-1,ipos)+rsup_dir(2*id,ipos))/2.+0.06*rs_down
+        st4=lmr+0.7/0.97*smr
+!TREES
+        tmr_dir(id,ipos,1)=(st4/sigma)**.25
+        if(cos(zr).gt.0)then
+         smr_shad=0.88*(rsm_dir(2*id-1,ipos)+rsm_dir(2*id,ipos))/2.+ &
+                  0.06*(rsup_dir(2*id-1,ipos)+rsup_dir(2*id,ipos))/2.+0.06*rs_down
+         smr_shad=smr_shad*exp(-0.5/cos(zr)*absv(iurb)**(0.5)*lai_urb(iurb))
+         smr=smr_shad+0.88*(rrm_dir(2*id-1,ipos)+rrm_dir(2*id,ipos))/2.
+        endif
+        st4=lmr+0.7/0.97*smr
+        tmr_dir(id,ipos,2)=(st4/sigma)**.25
+!TREES
+       enddo
+      enddo
+        
+      return
+
+      end subroutine modif_rad_mr
+
+
+! ===6=8===============================================================72
+
+! ===6=8===============================================================72
+
+      subroutine shadow_mas_mr_up(nd,nz_u,zr,deltar,ah,drst,ws,ss,pb,z,rs,    &
+                           rsup_dir,xpos,iurb)
+
+! ----------------------------------------------------------------------
+!         Modification of short wave radiation to take into account
+!         the shadow produced by the buildings for the computation of the mean radiant temperature
+! ----------------------------------------------------------------------
+
+      implicit none
+
+! ----------------------------------------------------------------------
+! INPUT:
+! ----------------------------------------------------------------------
+      integer nd                ! Number of street direction for the current urban class
+      integer nz_u              ! number of vertical layers defined in the urban grid
+      real ah                   ! Hour angle (it should come from the radiation routine)
+      real deltar               ! Declination of the sun
+      real drst(ndm)            ! street directions for the current urban class
+      real rs                   ! solar radiation
+      real ss(nz_um)          ! probability to have a building with height h
+      real pb(nz_um)          ! Probability that a building has an height greater or equal to h
+      real ws(ndm)              ! Street width of the current urban class
+      real z(nz_um)           ! Height of the urban grid levels
+      real zr                   ! zenith angle
+      real xpos(ndm,npos)
+! ----------------------------------------------------------------------
+! OUTPUT:
+! ----------------------------------------------------------------------
+      real rsup_dir(2*ndm,npos)
+
+! ----------------------------------------------------------------------
+! LOCAL:
+! ----------------------------------------------------------------------
+      integer id,iz,jz,idr,iurb,ipos
+      real aae,aaw,bbb,phix,rd,rtot,wsd,sh_pos
+
+
+! ----------------------------------------------------------------------
+! END VARIABLES DEFINITIONS
+! ----------------------------------------------------------------------
+
+
+
+      if(rs.eq.0.or.sin(zr).ge.1)then
+
+         do id=1,2*ndm
+          do ipos=1,npos
+           rsup_dir(id,ipos)=0.
+          enddo
+         enddo
+      else
+         if(abs(sin(zr)).gt.1.e-10)then
+          if(cos(deltar)*sin(ah)/sin(zr).ge.1)then
+           bbb=pi/2.
+          elseif(cos(deltar)*sin(ah)/sin(zr).le.-1)then
+           bbb=-pi/2.
+          else
+           bbb=asin(cos(deltar)*sin(ah)/sin(zr))
+           if((ah-deltar).lt.(-pi/2.))bbb=-pi-bbb
+           if((ah+deltar).gt.(pi/2.))bbb=pi-bbb
+          endif
+         else
+          if(cos(deltar)*sin(ah).ge.0)then
+           bbb=pi/2.
+          elseif(cos(deltar)*sin(ah).lt.0)then
+           bbb=-pi/2.
+          endif
+         endif
+
+         phix=zr
+
+         do id=1,2*ndm
+          do ipos=1,npos
+           rsup_dir(id,ipos)=0.
+          enddo
+         enddo
+!
+         do id=1,nd
+           aae=bbb-drst(id)
+           aaw=bbb-drst(id)+pi
+           if(sin(aaw).gt.1.e-10)then
+             wsd=abs(ws(id)/sin(aaw))
+             do jz=1,nz_u
+              rd=max(0.,wsd-(z(jz+1)-zman)*tan(phix))
+              sh_pos=rd/wsd*ws(id)
+              do ipos=1,npos
+               if(xpos(id,ipos).le.sh_pos)then
+                rsup_dir(2*id,ipos)=rsup_dir(2*id,ipos)+rs*ss(jz+1)
+                rsup_dir(2*id-1,ipos)=rsup_dir(2*id-1,ipos)+rs*ss(jz+1)
+               endif
+              enddo
+             enddo
+           endif
+           if(sin(aae).gt.1.e-10)then
+            wsd=abs(ws(id)/sin(aae))
+            do jz=1,nz_u
+               rd=max(0.,wsd-(z(jz+1)-zman)*tan(phix))
+               sh_pos=ws(id)-rd/wsd*ws(id)
+              do ipos=1,npos
+               if(xpos(id,ipos).ge.sh_pos)then
+                rsup_dir(2*id,ipos)=rsup_dir(2*id,ipos)+rs*ss(jz+1)
+                rsup_dir(2*id-1,ipos)=rsup_dir(2*id-1,ipos)+rs*ss(jz+1)
+               endif
+              enddo
+            enddo
+           endif
+         enddo
+      endif
+
+!
+!         stop
+!
+      return
+      end subroutine shadow_mas_mr_up
+
+! ===6=8===============================================================72
+
+! ===6=8===============================================================72
+
+      subroutine shadow_mas_mr_boston(nd,nz_u,zr,deltar,ah,drst,ws,ss,pb,z,rs,    &
+                           rsm_dir,xpos,iurb,xlat)
+
+! ----------------------------------------------------------------------
+!         Modification of short wave radiation to take into account
+!         the shadow produced by the buildings for the computation of the mean radiant temperature
+! ----------------------------------------------------------------------
+
+      implicit none
+
+! ----------------------------------------------------------------------
+! INPUT:
+! ----------------------------------------------------------------------
+      integer nd                ! Number of street direction for the current urban class
+      integer nz_u              ! number of vertical layers defined in the urban grid
+      real ah                   ! Hour angle (it should come from the radiation routine)
+      real deltar               ! Declination of the sun
+      real xlat,xlat_r ! latitude in degree and radians
+      real drst(ndm)            ! street directions for the current urban class
+      real rs                   ! solar radiation
+      real ss(nz_um)          ! probability to have a building with height h
+      real pb(nz_um)          ! Probability that a building has an height greater or equal to h
+      real ws(ndm)              ! Street width of the current urban class
+      real z(nz_um)           ! Height of the urban grid levels
+      real zr                   ! zenith angle
+      real xpos(ndm,npos)
+! ----------------------------------------------------------------------
+! OUTPUT:
+! ----------------------------------------------------------------------
+      real rsm_dir(2*ndm,npos)
+
+! ----------------------------------------------------------------------
+! LOCAL:
+! ----------------------------------------------------------------------
+      integer id,iz,jz,idr,iurb,ipos
+      real aae,aaw,bbb,phix,rd,rtot,wsd
+
+
+! ----------------------------------------------------------------------
+! END VARIABLES DEFINITIONS
+! ----------------------------------------------------------------------
+
+       xlat_r=xlat*pi/180
+
+      if(rs.le.0.or.sin(zr).ge.1)then
+         do id=1,2*ndm
+          do ipos=1,npos
+           rsm_dir(id,ipos)=0.
+          enddo
+         enddo
+      else
+         if(abs(sin(zr)).gt.1.e-10)then
+          if(cos(deltar)*sin(ah)/sin(zr).ge.1)then
+           bbb=pi/2.
+          elseif(cos(deltar)*sin(ah)/sin(zr).le.-1)then
+           bbb=-pi/2.
+          else
+           !bbb=asin(cos(deltar)*sin(ah)/sin(zr))
+           bbb=asin(cos(deltar)*sin(ah)/sin(zr))                !
+           if((ah-deltar).lt.(-pi/2.))bbb=-pi-bbb
+           if((ah+deltar).gt.(pi/2.))bbb=pi-bbb
+          endif
+         else
+          if(cos(deltar)*sin(ah).ge.0)then
+           bbb=pi/2.
+          elseif(cos(deltar)*sin(ah).lt.0)then
+           bbb=-pi/2.
+          endif
+         endif
+
+
+         phix=zr
+
+         do id=1,2*ndm
+          do ipos=1,npos
+           rsm_dir(id,ipos)=0.
+          enddo
+         enddo
+!
+           !write(65,*)deltar/pi*180.,ah/pi*180.,zr/pi*180.,bbb/pi*180.,xlat_r/pi*180.
+         do id=1,nd
+           aae=bbb-drst(id)
+           aaw=bbb-drst(id)+pi
+           !write(*,*)'in shadow_mas_mr_boston',sin(aae),sin(aaw)
+           !write(64,*)bbb/pi*180.,aae/pi*180.,aaw/pi*180.
+             do jz=1,nz_u
+              if(ss(jz+1).gt.0)then
+               !if(abs(sin(aae)).gt.1.e-10)then
+               if(sin(aae).gt.1.e-10)then
+                 do ipos=1,npos
+                   call shade_wall(0.,zman,z(jz+1),phix,aae,   &
+                      xpos(id,ipos),rd)
+                   rsm_dir(2*id-1,ipos)=rsm_dir(2*id-1,ipos)+rs*rd*ss(jz+1)
+                 enddo
+               !if(abs(sin(aaw)).gt.1.e-10)then
+               else
+                   do ipos=1,npos
+                     call shade_wall(0.,zman,z(jz+1),phix,aaw,   &
+                      ws(id)-xpos(id,ipos),rd)
+                     rsm_dir(2*id,ipos)=rsm_dir(2*id,ipos)+rs*rd*ss(jz+1)
+                   enddo
+                endif
+               endif
+              enddo
+         enddo
+      endif
+
+!
+!         stop
+!
+      return
+      end subroutine shadow_mas_mr_boston
+! ===6=8===============================================================72
+
+      subroutine long_rad_mr(iurb,nz_u,id,emw,emg,emwin,pwin,twlev,&
+                         mrw_dir,mrg_dir,mrs_dir,      &
+                         tg_av,tw,rlg,rlw,rl,pb,rlm_dir)
+
+! ----------------------------------------------------------------------
+! This routine computes the long wave radiation reaching a man in the middle of the street
+! ----------------------------------------------------------------------
+
+      implicit none
+
+! ----------------------------------------------------------------------
+! INPUT:
+! ----------------------------------------------------------------------
+      real emg                        ! Emissivity of ground for the current urban class
+      real emw                        ! Emissivity of wall for the current urban class
+
+      real mrw_dir(nz_um,2*ndm,npos)       ! View factors from ground to wall
+      real mrg_dir(2*ndm,npos)             ! View factors from sky to ground
+      real mrs_dir(2*ndm,npos)             ! View factors from sky to wall
+
+
+      integer id                      ! Current street direction
+      integer iurb                    ! Current urban class
+      integer nz_u                    ! Number of layer in the urban grid
+      real pb(nz_um)                  ! Probability to have a building with an height equal
+      real rl                         ! Downward flux of the longwave radiation
+      real tg_av(ndm)               ! Temperature in each layer of the ground [K]
+      real tw(2*ndm,nz_um)            ! Temperature in each layer of the wall [K]
+      real rlg(ndm)                   ! Long wave radiation at the ground
+      real rlw(2*ndm,nz_um)           ! Long wave radiation at the walls
+!
+!New Variables for BEM
+!
+      real twlev(2*ndm,nz_um)         ! Window temperature in BEM [K]
+      real emwin                      ! Emissivity of windows
+      real pwin                       ! Coverage area fraction of windows in the walls of the buildings (BEM)
+
+
+! ----------------------------------------------------------------------
+! OUTPUT:
+! ----------------------------------------------------------------------
+
+     real rlm_dir(2*ndm,npos)           ! Long wave radiation at the man
+
+! ----------------------------------------------------------------------
+! LOCAL:
+! ----------------------------------------------------------------------
+      integer i,ipos
+      real wall
+
+
+! ----------------------------------------------------------------------
+! END VARIABLES DEFINITIONS
+! ----------------------------------------------------------------------
+
+
+     do ipos=1,npos
+      rlm_dir(2*id-1,ipos)=0.
+     enddo
+
+     do i=1,nz_u
+      wall=(1.-emw*(1.-pwin)-emwin*pwin)*rlw(2*id,i)+                                         &
+              sigma*(emw*(1.-pwin)*tw(2*id,i)**4+emwin*pwin*twlev(2*id,i)**4)
+
+       do ipos=1,npos
+        rlm_dir(2*id-1,ipos)=rlm_dir(2*id-1,ipos)+mrw_dir(i,2*id-1,ipos)*(wall*pb(i+1)+rl*(1.-pb(i+1)))
+       enddo
+
+     enddo
+
+     do ipos=1,npos
+      rlm_dir(2*id-1,ipos)=rlm_dir(2*id-1,ipos)+ &
+      mrg_dir(2*id-1,ipos)*((1.-emg)*rlg(id)+    &
+      emg*sigma*tg_av(id)**4)+mrs_dir(2*id-1,ipos)*rl
+     enddo
+
+
+     do ipos=1,npos
+      rlm_dir(2*id,ipos)=0.
+     enddo
+     do i=1,nz_u
+      wall=(1.-emw*(1.-pwin)-emwin*pwin)*rlw(2*id-1,i)+                          &
+                  sigma*(emw*(1.-pwin)*tw(2*id-1,i)**4+emwin*pwin*twlev(2*id-1,i)**4)
+      do ipos=1,npos
+        rlm_dir(2*id,ipos)=rlm_dir(2*id,ipos)+mrw_dir(i,2*id,ipos)*(wall*pb(i+1)+rl*(1.-pb(i+1)))
+       enddo
+     enddo
+
+     do ipos=1,npos
+      rlm_dir(2*id,ipos)=rlm_dir(2*id,ipos)+mrg_dir(2*id,ipos)*((1.-emg)*rlg(id)+emg*sigma*tg_av(id)**4)+mrs_dir(2*id,ipos)*rl
+     enddo
+
+       return
+       end subroutine long_rad_mr
+
+! ===6=8===============================================================72
+
+! ===6=8===============================================================72
+
+       subroutine short_rad_mr(iurb,nz_u,id,albw,                        &
+                               albg,mrw_dir,mrg_dir,mrs_dir, &
+                               rsg,rsw,pb,rrm_dir)
+
+! ----------------------------------------------------------------------
+! This routine computes the amount of reflected solar radiation reaching
+! the man in the middle of the street
+! ----------------------------------------------------------------------
+
+      implicit none
+
+
+
+! ----------------------------------------------------------------------
+! INPUT:
+! ----------------------------------------------------------------------
+      real albg                 ! Albedo of the ground for the current urban class
+      real albw                 ! Albedo of the wall for the current urban class
+      real mrw_dir(nz_um,2*ndm,npos)       ! View factors from wall
+      real mrg_dir(2*ndm,npos)       ! View factors from ground
+      real mrs_dir(2*ndm,npos) ! View factors from sky
+      integer id                ! current street direction
+      integer iurb              ! current urban class
+      integer nz_u              ! Number of layer in the urban grid
+      real pb(nz_um)          ! probability to have a building with an height equal
+      real rsg(ndm)             ! Short wave radiation at the ground
+      real rsw(2*ndm,nz_um)     ! Short wave radiation at the walls
+
+! ----------------------------------------------------------------------
+! OUTPUT:
+! ----------------------------------------------------------------------
+     real rrm_dir(2*ndm,npos)     ! Short wave radiation at the man
+! ----------------------------------------------------------------------
+! LOCAL:
+! ----------------------------------------------------------------------
+      integer i,j,ipos
+
+! ----------------------------------------------------------------------
+! END VARIABLES DEFINITIONS
+! ----------------------------------------------------------------------
+
+      do i=1,nz_u
+       do ipos=1,npos
+        rrm_dir(2*id-1,ipos)=rrm_dir(2*id-1,ipos)+mrw_dir(i,2*id-1,ipos)*(pb(i+1)*albw*rsw(2*id,i))
+       enddo
+      enddo
+      do ipos=1,npos
+       rrm_dir(2*id-1,ipos)=rrm_dir(2*id-1,ipos)+mrg_dir(2*id-1,ipos)*albg*rsg(id)
+      enddo
+
+      do i=1,nz_u
+      do ipos=1,npos
+        rrm_dir(2*id,ipos)=rrm_dir(2*id,ipos)+mrw_dir(i,2*id,ipos)*(pb(i+1)*albw*rsw(2*id-1,i))
+       enddo
+      enddo
+      do ipos=1,npos
+       rrm_dir(2*id,ipos)=rrm_dir(2*id,ipos)+mrg_dir(2*id,ipos)*albg*rsg(id)
+      enddo
+
+      return
+      end subroutine short_rad_mr
+
+
+! ===6=8===============================================================72
+
+subroutine view_factors_mr_dir(id,iurb,nz_u,dxy,z,xpos,ws, &
+                                    mrw_dir,mrg_dir,mrs_dir)
+
+implicit none
+
+
+
+! -----------------------------------------------------------------------
+!     Input
+!------------------------------------------------------------------------
+
+      integer iurb            ! Number of the urban class
+      integer nz_u            ! Number of levels in the urban grid
+      integer id              ! Street direction number
+      real ws      ! Street width
+      real z(nz_um)         ! Height of the urban grid levels
+      real dxy                ! Street lenght
+
+
+! -----------------------------------------------------------------------
+!     Output
+!------------------------------------------------------------------------
+
+!   mrw,mrg,mrs are the view factors used to compute the long wave
+!   and the short wave contributions for the mean radiant temperature
+      real mrw_dir(nz_um,2*ndm,npos)         !  from wall
+      real mrg_dir(2*ndm,npos)               !  from ground
+      real mrs_dir(2*ndm,npos)               !  from sky
+      real xpos(ndm,npos)
+
+
+! -----------------------------------------------------------------------
+!     Local
+!------------------------------------------------------------------------
+
+      integer jz,iz,ipos
+
+      real hut
+      real f1,f2,f12,f23,f123,ftot
+      real fprl,fnrm
+      real a1,a2,a3,a4,a12,a23,a123
+      real wsh
+
+! -----------------------------------------------------------------------
+!     This routine calculates the view factors for the mean radiant temperature calculation
+! for a man of 2.m, in the middle of the street.
+!------------------------------------------------------------------------
+
+      hut=z(nz_u+1)
+
+
+
+! radiation from wall
+!       do id=1,ndm
+        do ipos=1,npos
+
+! first do it from one side
+
+         wsh=xpos(id,ipos)
+         do jz=1,nz_u
+            call fprls (fprl,dxy,abs(z(jz+1)-0.),wsh)
+            f123=fprl
+            call fprls (fprl,dxy,abs(z(jz+1)-zman),wsh)
+            f23=fprl
+            call fprls (fprl,dxy,abs(z(jz  )-0.),wsh)
+            f12=fprl
+            call fprls (fprl,dxy,abs(z(jz  )-zman),wsh)
+            f2 = fprl
+            a123=dxy*(abs(z(jz+1)-0.))
+            a12 =dxy*(abs(z(jz  )-0.))
+            a23 =dxy*(abs(z(jz+1)-zman))
+            a1  =dxy*(abs(zman-0.))
+            a2  =dxy*(abs(z(jz  )-zman))
+            a3  =dxy*(abs(zman))
+            ftot=0.5*(a123*f123-a23*f23-a12*f12+a2*f2)/a1
+            mrw_dir(jz,2*id-1,ipos)=ftot*a1/a3
+         enddo
+
+! radiation from ground
+         call fnrms (fnrm,zman,dxy,wsh)
+         f12=fnrm
+         call fnrms (fnrm,0.  ,dxy,wsh)
+         f1=fnrm
+         a1 = wsh*dxy
+         a12= wsh*dxy
+         a4=(zman-0.)*dxy
+         ftot=(a12*f12-a12*f1)/a1
+         mrg_dir(2*id-1,ipos)=ftot*a1/a4
+
+!  radiation from sky
+         call fnrms(fnrm,hut-0.  ,dxy,wsh)
+         f12 = fnrm
+         call fnrms (fnrm,hut-zman,dxy,wsh)
+         f1 =fnrm
+         a1 = wsh*dxy
+         a12= wsh*dxy
+         a4 = (zman-0.)*dxy
+         ftot=(a12*f12-a12*f1)/a1
+         mrs_dir(2*id-1,ipos)=ftot*a1/a4
+
+!now do it from the other side
+         wsh=ws-xpos(id,ipos)
+         do jz=1,nz_u
+            call fprls (fprl,dxy,abs(z(jz+1)-0.),wsh)
+            f123=fprl
+            call fprls (fprl,dxy,abs(z(jz+1)-zman),wsh)
+            f23=fprl
+            call fprls (fprl,dxy,abs(z(jz  )-0.),wsh)
+            f12=fprl
+            call fprls (fprl,dxy,abs(z(jz  )-zman),wsh)
+            f2 = fprl
+            a123=dxy*(abs(z(jz+1)-0.))
+            a12 =dxy*(abs(z(jz  )-0.))
+            a23 =dxy*(abs(z(jz+1)-zman))
+            a1  =dxy*(abs(zman-0.))
+            a2  =dxy*(abs(z(jz  )-zman))
+            a3  =dxy*(abs(zman))
+            ftot=0.5*(a123*f123-a23*f23-a12*f12+a2*f2)/a1
+            mrw_dir(jz,2*id,ipos)=ftot*a1/a3
+         enddo
+
+! radiation from ground
+         call fnrms (fnrm,zman,dxy,wsh)
+         f12=fnrm
+         call fnrms (fnrm,0.  ,dxy,wsh)
+         f1=fnrm
+         a1 = wsh*dxy
+         a12= wsh*dxy
+         a4=(zman-0.)*dxy
+         ftot=(a12*f12-a12*f1)/a1
+         mrg_dir(2*id,ipos)=ftot*a1/a4
+
+!  radiation from sky
+         call fnrms(fnrm,hut-0.  ,dxy,wsh)
+         f12 = fnrm
+         call fnrms (fnrm,hut-zman,dxy,wsh)
+         f1 =fnrm
+         a1 = wsh*dxy
+         a12= wsh*dxy
+         a4 = (zman-0.)*dxy
+         ftot=(a12*f12-a12*f1)/a1
+         mrs_dir(2*id,ipos)=ftot*a1/a4
+       enddo
+!      enddo
+
+      return
+end subroutine view_factors_mr_dir
+
+! ===6=8===============================================================72
 !====================================================================72
+        subroutine comf_calc_lw(therm_comf,met_comf, &
+                       clo_comf,wme_comf,height_comf,weight_comf, &
+                       ndm,npos,tmr_dir,ua_u,va_u, &
+                       pt_u,pr_u,da_u,qv_u, &
+                       ws,bs,pb, &
+                       comf_10,comf_50,comf_90,hist_comf, &
+                       ix,iy, &
+!TREES
+                       iurb, &
+                       gr_frac_trees) !CROCUS
+!TREES
+        implicit none
+        integer ndm,npos,ix,iy
+!TREES
+        real tmr_dir(ndm,npos,2),ws(ndm),bs(ndm)
+!TREES
+        real pb(nz_um)
+        real ua_u,va_u,pt_u,pr_u,da_u,qv_u
+        real comf_10,comf_50,comf_90
+        real hist_comf(ncomf)
+! thermal comfort
+        integer therm_comf
+        real met_comf, &
+            clo_comf,wme_comf,height_comf,weight_comf
+! Local
+        real   met,clo, wme, patm,body_weight, body_height
+        real lambda_w,speed(3),temp(3),rh,vel
+        real a,b,tr
+        real*8 tr8,temp8,speed8,rh8,utci8,ehpa8
+        double precision ET,UTCI_approx
+        real es
+        real gr_frac_trees !CROCUS
+!TREES
+        real comf_full(ndm*npos*3*3*2)
+        real weight_tree(ndm*npos*3*3*2)
+        integer itree,iurb
+!TREES
+        integer icount,id,ip,it,iv,np,iz
+
+! fix some parameters
+        met = met_comf    !metabolic rate (unit??)
+        clo = clo_comf    !clothing insulation (unit??)
+        wme=wme_comf ! external work|
+        body_weight=weight_comf ! body weight
+        body_height=height_comf !body height
+!        write(*,*)'therm_comf',therm_comf,met,clo,wme,body_weight,body_height
+!TREES
+        np=ndm*npos*3*3*2
+!TREES
+
+! first compute the speed from the velocity
+! a and b coefficients for the linear relation between speed and velocity
+! as speed=vel/(a-b*lambda_p)
+        a=1.
+        b=0.48
+        lambda_w=0.
+        do id=1,ndm
+         do iz=1,nz_um
+         lambda_w=lambda_w+2.*pb(iz)*dz_u/(ws(1)+bs(1))
+         enddo
+        enddo
+        lambda_w=lambda_w/ndm
+        vel=(ua_u**2.+va_u**2.)**.5
+        speed(2)=vel/max((a-b*lambda_w**0.4),0.01)
+        speed(3)=speed(2)+speed(2)*(0.25*lambda_w**0.55)
+        speed(1)=speed(2)-speed(2)*(0.25*lambda_w**0.55)
+        if(speed(1).lt.0.01)speed(1)=0.01
+!now compute the air temperature.Let assume a variability of +/- 1 K
+        temp(2)=pt_u*(pr_u/1.e+5)**(rcp_u)-273.15
+        temp(1)=temp(2)-1.
+        temp(3)=temp(2)+1.
+       if(therm_comf.eq.1)then
+       ! do iv=1,3
+       !  if(speed(iv).ge.2)speed(iv)=1.9999
+       !  if(speed(iv).le.0)speed(iv)=0.0001
+       ! enddo
+       ! do it=1,3
+       !  if(temp(it).ge.50.)then
+       !    write(*,*)'temp greater than 50, force to 50C'
+       !    temp(it)=50.
+       !  endif
+       !  if(temp(it).le.10.)then
+       !    write(*,*)'temp lower than 10, force to 10C'
+       !    temp(it)=10.
+       !  endif
+       ! enddo
+
+! now compute all the values for set
+!TREES
+        icount=0
+        do ip=1,npos
+        do id=1,ndm
+        do iv=1,3
+        do it=1,3
+        do itree=1,2
+         icount=icount+1
+         call calc_relhum(pr_u,temp(it)+273.15,qv_u,rh)
+         tr=tmr_dir(id,ip,itree)-273.15
+       !  write(*,*)'before call to set',temp(it),tr,speed(iv),rh, &
+       !             met,clo,wme,pr_u,body_weight,body_height
+         call set_calc_loc(temp(it),tr,speed(iv),rh, &
+                    met,clo,wme,pr_u,body_weight,body_height, &
+                     comf_full(icount))
+         if(itree.eq.1)weight_tree(icount)=1.-gr_frac_trees
+         if(itree.eq.2)weight_tree(icount)=gr_frac_trees
+       !  write(*,*)'after call to set=',comf_full(icount)
+        enddo
+        enddo
+        enddo
+        enddo
+        enddo
+        call perc(np,comf_full,comf_10,comf_50,comf_90)
+        !write(*,*)'call to hist_cal'
+        call hist_calc(np,therm_comf,comf_full,weight_tree,hist_comf)
+       elseif(therm_comf.eq.2)then
+        icount=0
+        do ip=1,npos
+        do id=1,ndm
+        do iv=1,3
+        do it=1,3
+        do itree=1,2
+         icount=icount+1
+         call calc_relhum(pr_u,temp(it)+273.15,qv_u,rh)
+         tr=tmr_dir(id,ip,itree)-273.15
+         tr8=tr
+         temp8=temp(it)
+         speed8=speed(iv)
+         rh8=rh
+         call es_calc(temp(it),es)
+         ehpa8=es*rh8/100.0
+         call utci_approx_calc(temp8,ehPa8,tr8,speed8,utci_approx)
+         utci8 = UTCI_approx
+         comf_full(icount)=utci8
+         if(itree.eq.1)weight_tree(icount)=1.-gr_frac_trees
+         if(itree.eq.2)weight_tree(icount)=gr_frac_trees
+        enddo
+        enddo
+        enddo
+        enddo
+        enddo
+
+        call perc(np,comf_full,comf_10,comf_50,comf_90)
+        call hist_calc(np,therm_comf,comf_full,weight_tree,hist_comf)
+       endif
+!TREES
+
+
+
+        return
+      end subroutine comf_calc_lw
+!========================================
+        subroutine comf_calc_lp(therm_comf,met_comf, &
+                       clo_comf,wme_comf,height_comf,weight_comf, &
+                       ndm,npos,tmr_dir,ua_u,va_u, &
+                       pt_u,pr_u,da_u,qv_u, &
+                      ws,bs, &
+                       comf_10,comf_50,comf_90, &
+                       ix,iy)
+        implicit none
+        integer ndm,npos,ix,iy
+        real tmr_dir(ndm,npos),ws(ndm),bs(ndm)
+        real ua_u,va_u,pt_u,pr_u,da_u,qv_u
+        real comf_10,comf_50,comf_90
+! thermal comfort
+        integer therm_comf
+        real met_comf, &
+            clo_comf,wme_comf,height_comf,weight_comf
+! Local
+        real   met,clo, wme, patm,body_weight, body_height
+        real lambda_p,speed(3),temp(3),rh,vel
+        real a,b,tr
+        real*8 tr8,temp8,speed8,rh8,utci8,ehpa8
+        double precision ET,UTCI_approx
+        real es
+        real comf_full(ndm*npos*3*3)
+        integer icount,id,ip,it,iv,np
+
+! fix some parameters
+        met = met_comf    !metabolic rate (unit??)
+        clo = clo_comf    !clothing insulation (unit??)
+        wme=wme_comf ! external work|
+        body_weight=weight_comf ! body weight
+        body_height=height_comf !body height
+!        write(*,*)'therm_comf',therm_comf,met,clo,wme,body_weight,body_height
+
+        np=ndm*npos*3*3
+! first compute the speed from the velocity
+! a and b coefficients for the linear relation between speed and velocity
+! as speed=vel/(a-b*lambda_p)
+        a=1.
+        b=1.
+        lambda_p=0.
+        do id=1,ndm
+         lambda_p=lambda_p+bs(1)/(ws(1)+bs(1))
+        enddo
+        lambda_p=lambda_p/ndm
+        vel=(ua_u**2.+va_u**2.)**.5
+        speed(2)=vel/max((a-b*lambda_p),0.01)
+        speed(3)=speed(2)+speed(2)*(0.6+0.2*lambda_p)
+        speed(1)=speed(2)-speed(2)*(0.6+0.2*lambda_p)
+!now compute the air temperature.Let assume a variability of +/- 0.5 K
+        temp(2)=pt_u*(pr_u/1.e+5)**(rcp_u)-273.15
+        temp(1)=temp(2)-1.
+        temp(3)=temp(2)+1.
+       if(therm_comf.eq.1)then
+        !do iv=1,3
+        ! if(speed(iv).ge.2)speed(iv)=1.9999
+        ! if(speed(iv).le.0)speed(iv)=0.0001
+        !enddo
+        !do it=1,3
+        ! if(temp(it).ge.50.)then
+        !   write(*,*)'temp greater than 50, force to 50C'
+        !   temp(it)=50.
+        ! endif
+        ! if(temp(it).le.10.)then
+        !   write(*,*)'temp lower than 10, force to 10C'
+        !   temp(it)=10.
+        ! endif
+        !enddo
+
+! now compute all the values for set
+        icount=0
+        do ip=1,npos
+        do id=1,ndm
+        do iv=1,3
+        do it=1,3
+         icount=icount+1
+         call calc_relhum(pr_u,temp(it)+273.15,qv_u,rh)
+         tr=tmr_dir(id,ip)-273.15
+         !write(*,*)'before call to set',temp(it),tr,speed(iv),rh, &
+         !           met,clo,wme,pr_u,body_weight,body_height
+         call set_calc_loc(temp(it),tr,speed(iv),rh, &
+                    met,clo,wme,pr_u,body_weight,body_height, &
+                     comf_full(icount))
+         !write(*,*)'after call to set=',comf_full(icount)
+        enddo
+        enddo
+        enddo
+        enddo
+        call perc(np,comf_full,comf_10,comf_50,comf_90)
+       elseif(therm_comf.eq.2)then
+        icount=0
+        do ip=1,npos
+        do id=1,ndm
+        do iv=1,3
+        do it=1,3
+         icount=icount+1
+         tr8=tr
+         temp8=temp(it)
+         speed8=speed(iv)
+         rh8=rh
+         call es_calc(temp(it),es)
+         ehpa8=es*rh8/100.0
+         call utci_approx_calc(temp8,ehPa8,tr8,speed8,utci_approx)
+         utci8 = UTCI_approx
+         comf_full(icount)=utci8
+        enddo
+        enddo
+        enddo
+        enddo
+
+        call perc(np,comf_full,comf_10,comf_50,comf_90)
+       endif
+
+        return
+      end subroutine comf_calc_lp
+!----------------------------------------------
+     subroutine perc(np,wrk,p10,p50,p90)
+     real wrk(np)
+     real p10,p50,p90,inf,sup
+     integer ip,jp,i,ip10,ip50,ip90,np
+
+      do ip=1,np
+      do jp=ip,np
+       if(wrk(jp).lt.wrk(ip))then
+        inf=wrk(jp)
+        sup=wrk(ip)
+        wrk(ip)=inf
+        wrk(jp)=sup
+       endif
+      enddo
+      enddo
+
+      ip10=np*0.1
+      ip50=np*0.5
+      ip90=np*0.90
+
+      p10=wrk(ip10)
+      p50=wrk(ip50)
+      p90=wrk(ip90)
+      return
+      end subroutine perc
+!----------------------------------------
+!TREES
+!----------------------------------------
+      subroutine hist_calc(np,therm_comf,comf_full,weight_tree,hist_comf)
+      implicit none
+      integer np,it,ip
+      real hist_comf(ncomf),comf_full(np),weight_tree(np)
+      integer therm_comf
+      !write(*,*)'in hist_calc',np,ncomf,therm_comf,comf_full
+      if(therm_comf.eq.1)then
+       do it=1,ncomf
+       do ip=1,np
+        if(comf_full(ip).ge.ranges_set(it).and.comf_full(ip).lt.ranges_set(it+1))hist_comf(it)=hist_comf(it)+weight_tree(ip)
+       enddo
+       !write(*,*)'comf range',it,hist_comf(it),ranges_set(it)
+       enddo
+       do it=1,ncomf
+        hist_comf(it)=hist_comf(it)/np*100.
+       enddo
+      elseif(therm_comf.eq.2)then
+       do ip=1,np
+       do it=1,ncomf
+        if(comf_full(ip).ge.ranges_utci(it).and.comf_full(ip).lt.ranges_utci(it+1))hist_comf(it)=hist_comf(it)+weight_tree(ip)
+       enddo
+       enddo
+       do it=1,ncomf
+        hist_comf(it)=hist_comf(it)/np*100.
+       enddo
+      endif
+      return
+      end subroutine hist_calc
+!TREES
+
+!--------------------------------------------------------------------
+      subroutine set_calc_loc(tdb,tr,v,rh,met,clo,wme,patm,body_weight,body_height,set)
+
+! subroutine provided by Negin Nazarian (University of New South Wales, n.nazarian@unsw.edu.au )
+!    Calculates the Standard Effective Temperature (SET). The SET is the
+!    temperature of an imaginary environment at 50% (rh), <0.1 m/s (20 fpm)
+!    average air speed (v), and tr = tdb ,
+!    in which the total heat loss from the skin of an imaginary occupant with an
+!    activity level of 1.0 met and a clothing level of 0.6 clo is the same as
+!    that
+!    from a person in the actual environment with actual clothing and activity
+!    level.
+!
+!.......................
+      implicit none
+      real   tdb, tr,v,rh
+      real   met,clo, wme, patm,body_weight, body_height
+      real   vapor_pressure,air_velocity, pressure_in_atmospheres
+      real   PSSK, skin_blood_flow_neutral, p_sattorr
+      real   k_clo,  met_factor, body_surface_area
+      real   SBC, CSW, CDIL, CSTR
+      real   temp_skin_neutral, temp_core_neutral, temp_body_neutral
+      real   temp_skin, temp_core, skin_blood_flow, TB, SKSIG
+      real   RCL, FACL, LR, ALFA, ESK
+      integer LTIME
+      real   RM, M, WCRIT, ICL, W, CHRS
+      real   CHC, CHCV, CHR, CTC, RA, TOP, TCL, TCL_OLD, DRY
+      real   HFCS, ERES, CRES, SCR, SSK, TCSK, TCCR, DTSK, DTCR
+      real   WARMS, COLDS, CRSIG, WARMC, COLDC, BDSIG, WARMB
+      real   REGSW,ERSW,REA, RECLa, EMAX, PRSW, PWET, EDIF, MSHIV
+      real   CTCS, RCLOS, RCLS, FACLS, FCLS, IMS, ICLS, RAS, REAS, RECLS
+      real   HD_S, HE_S, HSK, CHCS
+      real   DELTA, dx, ERR1, ERR2
+      real   psk_new, psk_old
+      real   set_old,set ! outputs
+
+      integer i, TIM,iter
+
+      LOGICAL  flag
+
+!      call StandardCompliance(tdb, tr, v, rh, met, clo)
+!    Initial variables as defined in the ASHRAE 55-2017
+      call p_sat_torr(tdb,p_sattorr)
+      vapor_pressure = rh * p_sattorr / 100
+      air_velocity = max(v, 0.1)
+      k_clo = 0.25
+!    constants
+      SBC = 0.000000056697  ! Stefan-Boltzmann constant (W/m2K4)
+      CSW = 170.0
+      CDIL = 120.0
+      CSTR = 0.5
+      met_factor = 58.2
+!    considering 0 work
+      wme=0
+!  Calculating body surface area
+      body_surface_area = 0.202*body_weight**0.425*body_height**0.725 ! DuBois & DuBois Surface Area
+! initialization
+      temp_skin_neutral = 33.7
+      temp_core_neutral = 36.8
+      temp_body_neutral = 36.49
+      skin_blood_flow_neutral = 6.3
+
+      temp_skin = temp_skin_neutral
+      temp_core = temp_core_neutral
+      skin_blood_flow = skin_blood_flow_neutral
+      ALFA = 0.1
+      ESK = 0.1 * met
+
+      pressure_in_atmospheres = patm / 101325
+      LTIME = 60
+      RCL = 0.155 * clo
+
+      FACL = 1.0 + 0.15 * clo  ! INCREASE IN BODY SURFACE AREA DUE TO CLOTHING
+      LR = 2.2 / pressure_in_atmospheres
+      RM = met * met_factor
+      M = met * met_factor
+      if(clo.le.0.)then
+        WCRIT = 0.38 * (air_velocity**(-0.29))
+        ICL = 1.0
+      else
+        WCRIT = 0.59 * (air_velocity**(-0.08))
+        ICL = 0.45
+      endif
+
+      CHC = 3.0 *(pressure_in_atmospheres**0.53)
+      CHCV = 8.600001 * ((air_velocity * pressure_in_atmospheres)**0.53)
+      CHC = max(CHC, CHCV)
+
+      CHR = 4.7
+      CTC = CHR + CHC
+      RA = 1.0 / (FACL * CTC)
+      TOP = (CHR * tr + CHC * tdb) / CTC
+      TCL = TOP + (temp_skin - TOP) / (CTC * (RA + RCL))
+
+! For loop for solving for SET -
+      TCL_OLD = 0.0
+      flag = .True.
+      i = 0
+       do TIM = 0, LTIME - 1
+        do while (ABS(TCL - TCL_OLD).gt.0.0001)
+            if (flag) then
+                i = i + 1
+                TCL_OLD = TCL
+                CHR = 4.0 * SBC * (((TCL + tr) / 2.0 + 273.15)**3.0) * 0.72
+                CTC = CHR + CHC
+                RA = 1.0 / (FACL * CTC)
+                TOP = (CHR * tr + CHC * tdb) / CTC
+            endif
+            TCL = (RA * temp_skin + RCL * TOP) / (RA + RCL)
+            flag = .True.
+        enddo
+        flag = .False.
+        DRY = (temp_skin - TOP) / (RA + RCL)
+!         write(*,*)'dry',dry,top,ra,rcl
+        HFCS = (temp_core - temp_skin) * (5.28 + 1.163 * skin_blood_flow)
+        ERES = 0.0023 * M * (44.0 - vapor_pressure)
+        CRES = 0.0014 * M * (34.0 - tdb)
+        SCR = M - HFCS - ERES - CRES - wme
+        SSK = HFCS - DRY - ESK
+!         write(*,*)'ssk',hfcs,dry,esk
+        TCSK = 0.97 * ALFA * body_weight
+        TCCR = 0.97 * (1 - ALFA) * body_weight
+        DTSK = (SSK * body_surface_area) / (TCSK * 60.0)
+        DTCR = SCR * body_surface_area / (TCCR * 60.0)
+        temp_skin = temp_skin + DTSK
+        temp_core = temp_core + DTCR
+        TB = ALFA * temp_skin + (1 - ALFA) * temp_core
+        SKSIG = temp_skin - temp_skin_neutral
+!         write(*,*)'temp_skin',temp_skin,dtsk,ssk,tcsk
+        if (SKSIG > 0) then
+        WARMS = 1.0 * SKSIG
+        else
+        WARMS=0.0
+        endif
+
+        if ((-1.0 * SKSIG) > 0) then
+        COLDS = (1.0 * (-1.0 * SKSIG))
+        else
+        COLDS =0.0
+        endif
+
+        CRSIG = (temp_core - temp_core_neutral)
+        if (CRSIG > 0) then
+        WARMC = 1.0 * CRSIG
+        else
+        WARMC = 0.0
+        endif
+
+        if ((-1.0 * CRSIG) > 0) then
+        COLDC = (1.0* (-1.0 * CRSIG))
+        else
+        COLDC = 0.0
+        endif
+        BDSIG = TB - temp_body_neutral
+
+        if (BDSIG > 0)  then
+        WARMB = 1.0* BDSIG
+        else
+        WARMB = 0.0
+        endif
+        skin_blood_flow = (skin_blood_flow_neutral + CDIL * WARMC) / (1 + CSTR *COLDS)
+
+        if(skin_blood_flow.gt.90.0) then
+            skin_blood_flow = 90.0
+        elseif(skin_blood_flow.lt.0.5) then
+            skin_blood_flow = 0.5
+        endif
+!        write(*,*)'before regsw',csw,warmb,warms
+        REGSW = CSW * WARMB * EXP(WARMS / 10.7)
+        if(REGSW.gt.500.0) then
+            REGSW = 500.0
+        endif
+
+        ERSW = 0.68 * REGSW
+        REA = 1.0 / (LR * FACL * CHC)
+        RECLa = RCL / (LR * ICL)
+        call p_sat_torr(temp_skin,PSSK)
+        EMAX = (PSSK - vapor_pressure) / (REA + RECLa)
+
+        PRSW = ERSW / EMAX
+        PWET = 0.06 + 0.94 * PRSW
+        EDIF = PWET * EMAX - ERSW
+        ESK = ERSW + EDIF
+
+        if(PWET.gt.WCRIT) then
+            PWET = WCRIT
+            PRSW = WCRIT / 0.94
+            ERSW = PRSW * EMAX
+            EDIF = 0.06 * (1.0 - PRSW) * EMAX
+        elseif(EMAX.lt.0.) then
+            EDIF = 0
+            ERSW = 0
+            PWET = WCRIT
+        endif
+
+        ESK = ERSW + EDIF
+        MSHIV = 19.4 * COLDS * COLDC
+        M = RM + MSHIV
+        ALFA = 0.0417737 + 0.7451833 / (skin_blood_flow + .585417)
+      enddo
+
+      HSK = DRY + ESK
+      W = PWET
+      call p_sat_torr(temp_skin,PSSK)
+      CHRS = CHR
+
+      if (met.lt.0.85) then
+        CHCS = 3.0
+      else
+        CHCS = 5.66 *((met - 0.85)**0.39)
+      endif
+
+      if(CHCS.lt.3.0) then
+        CHCS = 3.0
+      endif
+
+      CTCS = CHCS + CHRS
+      RCLOS = 1.52 / ((met - wme / met_factor) + 0.6944) - 0.1835
+      RCLS = 0.155 * RCLOS
+      FACLS = 1.0 + k_clo * RCLOS
+      FCLS = 1.0 / (1.0 + 0.155 * FACLS * CTCS * RCLOS)
+      IMS = 0.45
+      ICLS = IMS * CHCS / CTCS * (1 - FCLS) / (CHCS / CTCS - FCLS * IMS)
+      RAS = 1.0 / (FACLS * CTCS)
+      REAS = 1.0 / (LR * FACLS * CHCS)
+      RECLS = RCLS / (LR * ICLS)
+      HD_S = 1.0 / (RAS + RCLS)
+      HE_S = 1.0 / (REAS + RECLS)
+
+      DELTA = .0001
+      dx = 100.0
+      set_old = NINT((temp_skin - HSK / HD_S)*100)/100
+!      write(*,*)temp_skin,HSK,HD_S
+      iter=0
+
+      do while (ABS(dx).gt.0.0001)
+              call  p_sat_torr(set_old,psk_old)
+        ERR1 = (HSK - HD_S * (temp_skin - set_old) - W * HE_S * (PSSK - 0.5 *psk_old))
+        call  p_sat_torr((set_old + DELTA),psk_new)
+        ERR2 = (HSK - HD_S * (temp_skin - (set_old + DELTA)) - W * HE_S * (PSSK- 0.5 *psk_new))
+        set = set_old - DELTA * ERR1 / (ERR2 - ERR1)
+        dx = set - set_old
+        set_old = set
+        iter=iter+1
+!        write(*,*)'iter',iter,dx,abs(dx)
+      enddo
+!      write(*,*)'set=',set
+
+
+      return
+      end subroutine set_calc_loc
+
+
+
+!-------------------------------------------
+  subroutine calc_relhum ( p, t, qv , rh )
+
+    IMPLICIT NONE
+
+    REAL, INTENT(IN) :: p, t, qv
+    REAL :: rh
+
+    ! Local
+    ! -----
+    REAL, PARAMETER :: pq0=379.90516
+    REAL, PARAMETER :: a2=17.2693882
+    REAL, PARAMETER :: a3=273.16
+    REAL, PARAMETER :: a4=35.86
+    REAL, PARAMETER :: rhmin=1.
+    REAL :: q, qs
+    INTEGER :: i,j,k
+
+    ! Following algorithms adapted from WRFPOST
+    ! May want to substitute with another later
+    ! -----------------------------------------
+      q=qv/(1.0+qv)
+      qs=pq0/p*exp(a2*(t-a3)/(t-a4))
+      rh=100.*q/qs
+      IF (rh .gt. 100.) THEN
+        rh=100.
+      ELSE IF (rh .lt. rhmin) THEN
+        rh=rhmin
+      ENDIF
+
+      return
+      end subroutine calc_relhum
+!
+     subroutine StandardCompliance(tdb, tr, v, rh, met, clo)
+     !
+      real   tdb, tr,v,rh,met,clo
+
+      if((tdb.ge.50).OR. (tdb.le.10)) then
+          write(6,*)'ASHRAE air temperature applicability limits between 10 and 50 °C',tdb
+          stop
+      endif
+      if((v.ge.2).OR. (v.le.0))then
+          write(6,*)'ASHRAE air velocity applicability limits between 0 and 2 m/s',v
+          stop
+      endif
+      if((met.ge.2).OR. (met.le.1))then
+           write(6,*)'ASHRAE met applicability limits between 1.0 and 2.0 met'
+           stop
+      endif
+      if((clo.ge.1.5).OR. (met.le.0)) then
+           write(6,*)'ASHRAE clo applicability limits between 0.0 and 1.5 clo'
+           stop
+      endif
+
+      return
+      end subroutine StandardCompliance
+
+     subroutine p_sat_torr(tdb,p_sattorr)
+!    Estimates the saturation vapor pressure in [torr]
+!    Parameters
+!    ----------
+!    tdb : float
+!        dry bulb air temperature, [C]
+
+!    Returns
+!    -------
+!    p_sat  : float
+!        saturation vapor pressure [torr]
+!
+      real   tdb, p_sattorr
+      p_sattorr=EXP(18.6686 - 4030.183 / (tdb + 235.0))
+      return
+      end subroutine p_sat_torr
+!--------------------------------------------------------------------
+!
+!~ **********************************************
+     subroutine UTCI_approx_calc(Ta,ehPa,Tmrt,va,utci_approx)
+!~ **********************************************
+ !~ DOUBLE PRECISION Function value is the UTCI in degree Celsius
+ !~ computed by a 6th order approximating polynomial from the 4 Input paramters
+ !~
+ !~ Input parameters (all of type DOUBLE PRECISION)
+ !~ - Ta       : air temperature, degree Celsius
+ !~ - ehPa    : water vapour presure, hPa=hecto Pascal
+ !~ - Tmrt   : mean radiant temperature, degree Celsius
+ !~ - va10m  : wind speed 10 m above ground level in m/s
+ !~
+ !~  UTCI_approx, Version a 0.002, October 2009
+ !~  Copyright (C) 2009  Peter Broede
+
+      implicit none
+        !~ type of input of the argument list
+       double precision utci_approx
+       DOUBLE PRECISION Ta,va,Tmrt,ehPa,Pa,D_Tmrt;
+          D_TMRT=Tmrt-Ta
+          PA = ehPa/10.0; !~ use vapour pressure in kPa
+        !~ calculate 6th order polynomial as approximation
+      UTCI_approx=Ta+&
+                ( 6.07562052D-01 )   + &
+                ( -2.27712343D-02 ) * Ta + &
+                ( 8.06470249D-04 ) * Ta*Ta + &
+                ( -1.54271372D-04 ) * Ta*Ta*Ta + &
+                ( -3.24651735D-06 ) * Ta*Ta*Ta*Ta + &
+                ( 7.32602852D-08 ) * Ta*Ta*Ta*Ta*Ta + &
+                ( 1.35959073D-09 ) * Ta*Ta*Ta*Ta*Ta*Ta + &
+                ( -2.25836520D+00 ) * va + &
+                ( 8.80326035D-02 ) * Ta*va + &
+                ( 2.16844454D-03 ) * Ta*Ta*va + &
+                ( -1.53347087D-05 ) * Ta*Ta*Ta*va + &
+                ( -5.72983704D-07 ) * Ta*Ta*Ta*Ta*va + &
+                ( -2.55090145D-09 ) * Ta*Ta*Ta*Ta*Ta*va + &
+                ( -7.51269505D-01 ) * va*va + &
+                ( -4.08350271D-03 ) * Ta*va*va + &
+                ( -5.21670675D-05 ) * Ta*Ta*va*va + &
+                ( 1.94544667D-06 ) * Ta*Ta*Ta*va*va + &
+                ( 1.14099531D-08 ) * Ta*Ta*Ta*Ta*va*va + &
+                ( 1.58137256D-01 ) * va*va*va + &
+                ( -6.57263143D-05 ) * Ta*va*va*va + &
+                ( 2.22697524D-07 ) * Ta*Ta*va*va*va + &
+                ( -4.16117031D-08 ) * Ta*Ta*Ta*va*va*va + &
+                ( -1.27762753D-02 ) * va*va*va*va + &
+                ( 9.66891875D-06 ) * Ta*va*va*va*va + &
+                ( 2.52785852D-09 ) * Ta*Ta*va*va*va*va + &
+                ( 4.56306672D-04 ) * va*va*va*va*va + &
+                ( -1.74202546D-07 ) * Ta*va*va*va*va*va + &
+                ( -5.91491269D-06 ) * va*va*va*va*va*va + &
+                ( 3.98374029D-01 ) * D_Tmrt + &
+                ( 1.83945314D-04 ) * Ta*D_Tmrt + &
+                ( -1.73754510D-04 ) * Ta*Ta*D_Tmrt + &
+                ( -7.60781159D-07 ) * Ta*Ta*Ta*D_Tmrt + &
+                ( 3.77830287D-08 ) * Ta*Ta*Ta*Ta*D_Tmrt + &
+                ( 5.43079673D-10 ) * Ta*Ta*Ta*Ta*Ta*D_Tmrt + &
+                ( -2.00518269D-02 ) * va*D_Tmrt + &
+                ( 8.92859837D-04 ) * Ta*va*D_Tmrt + &
+                ( 3.45433048D-06 ) * Ta*Ta*va*D_Tmrt + &
+                ( -3.77925774D-07 ) * Ta*Ta*Ta*va*D_Tmrt + &
+                ( -1.69699377D-09 ) * Ta*Ta*Ta*Ta*va*D_Tmrt + &
+                ( 1.69992415D-04 ) * va*va*D_Tmrt + &
+                ( -4.99204314D-05 ) * Ta*va*va*D_Tmrt + &
+                ( 2.47417178D-07 ) * Ta*Ta*va*va*D_Tmrt + &
+                ( 1.07596466D-08 ) * Ta*Ta*Ta*va*va*D_Tmrt + &
+                ( 8.49242932D-05 ) * va*va*va*D_Tmrt + &
+                ( 1.35191328D-06 ) * Ta*va*va*va*D_Tmrt + &
+                ( -6.21531254D-09 ) * Ta*Ta*va*va*va*D_Tmrt + &
+                ( -4.99410301D-06 ) * va*va*va*va*D_Tmrt + &
+                ( -1.89489258D-08 ) * Ta*va*va*va*va*D_Tmrt + &
+                ( 8.15300114D-08 ) * va*va*va*va*va*D_Tmrt + &
+                ( 7.55043090D-04 ) * D_Tmrt*D_Tmrt + &
+                ( -5.65095215D-05 ) * Ta*D_Tmrt*D_Tmrt + &
+                ( -4.52166564D-07 ) * Ta*Ta*D_Tmrt*D_Tmrt + &
+                ( 2.46688878D-08 ) * Ta*Ta*Ta*D_Tmrt*D_Tmrt + &
+                ( 2.42674348D-10 ) * Ta*Ta*Ta*Ta*D_Tmrt*D_Tmrt + &
+                ( 1.54547250D-04 ) * va*D_Tmrt*D_Tmrt + &
+                ( 5.24110970D-06 ) * Ta*va*D_Tmrt*D_Tmrt + &
+                ( -8.75874982D-08 ) * Ta*Ta*va*D_Tmrt*D_Tmrt + &
+                ( -1.50743064D-09 ) * Ta*Ta*Ta*va*D_Tmrt*D_Tmrt + &
+                ( -1.56236307D-05 ) * va*va*D_Tmrt*D_Tmrt + &
+                ( -1.33895614D-07 ) * Ta*va*va*D_Tmrt*D_Tmrt + &
+                ( 2.49709824D-09 ) * Ta*Ta*va*va*D_Tmrt*D_Tmrt + &
+                ( 6.51711721D-07 ) * va*va*va*D_Tmrt*D_Tmrt + &
+                ( 1.94960053D-09 ) * Ta*va*va*va*D_Tmrt*D_Tmrt + &
+                ( -1.00361113D-08 ) * va*va*va*va*D_Tmrt*D_Tmrt + &
+                ( -1.21206673D-05 ) * D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( -2.18203660D-07 ) * Ta*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( 7.51269482D-09 ) * Ta*Ta*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( 9.79063848D-11 ) * Ta*Ta*Ta*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( 1.25006734D-06 ) * va*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( -1.81584736D-09 ) * Ta*va*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( -3.52197671D-10 ) * Ta*Ta*va*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( -3.36514630D-08 ) * va*va*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( 1.35908359D-10 ) * Ta*va*va*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( 4.17032620D-10 ) * va*va*va*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( -1.30369025D-09 ) * D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( 4.13908461D-10 ) * Ta*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( 9.22652254D-12 ) * Ta*Ta*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( -5.08220384D-09 ) * va*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( -2.24730961D-11 ) * Ta*va*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( 1.17139133D-10 ) * va*va*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( 6.62154879D-10 ) * D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( 4.03863260D-13 ) * Ta*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( 1.95087203D-12 ) * va*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt + &
+                ( -4.73602469D-12 ) * D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt+ &
+                ( 5.12733497D+00 ) * Pa + &
+                ( -3.12788561D-01 ) * Ta*Pa + &
+                ( -1.96701861D-02 ) * Ta*Ta*Pa + &
+                ( 9.99690870D-04 ) * Ta*Ta*Ta*Pa + &
+                ( 9.51738512D-06 ) * Ta*Ta*Ta*Ta*Pa + &
+                ( -4.66426341D-07 ) * Ta*Ta*Ta*Ta*Ta*Pa + &
+                ( 5.48050612D-01 ) * va*Pa + &
+                ( -3.30552823D-03 ) * Ta*va*Pa + &
+                ( -1.64119440D-03 ) * Ta*Ta*va*Pa + &
+                ( -5.16670694D-06 ) * Ta*Ta*Ta*va*Pa + &
+                ( 9.52692432D-07 ) * Ta*Ta*Ta*Ta*va*Pa + &
+                ( -4.29223622D-02 ) * va*va*Pa + &
+                ( 5.00845667D-03 ) * Ta*va*va*Pa + &
+                ( 1.00601257D-06 ) * Ta*Ta*va*va*Pa + &
+                ( -1.81748644D-06 ) * Ta*Ta*Ta*va*va*Pa + &
+                ( -1.25813502D-03 ) * va*va*va*Pa + &
+                ( -1.79330391D-04 ) * Ta*va*va*va*Pa + &
+                ( 2.34994441D-06 ) * Ta*Ta*va*va*va*Pa + &
+                ( 1.29735808D-04 ) * va*va*va*va*Pa + &
+                ( 1.29064870D-06 ) * Ta*va*va*va*va*Pa + &
+                ( -2.28558686D-06 ) * va*va*va*va*va*Pa + &
+                ( -3.69476348D-02 ) * D_Tmrt*Pa + &
+                ( 1.62325322D-03 ) * Ta*D_Tmrt*Pa + &
+                ( -3.14279680D-05 ) * Ta*Ta*D_Tmrt*Pa + &
+                ( 2.59835559D-06 ) * Ta*Ta*Ta*D_Tmrt*Pa + &
+                ( -4.77136523D-08 ) * Ta*Ta*Ta*Ta*D_Tmrt*Pa + &
+                ( 8.64203390D-03 ) * va*D_Tmrt*Pa + &
+                ( -6.87405181D-04 ) * Ta*va*D_Tmrt*Pa + &
+                ( -9.13863872D-06 ) * Ta*Ta*va*D_Tmrt*Pa + &
+                ( 5.15916806D-07 ) * Ta*Ta*Ta*va*D_Tmrt*Pa + &
+                ( -3.59217476D-05 ) * va*va*D_Tmrt*Pa + &
+                ( 3.28696511D-05 ) * Ta*va*va*D_Tmrt*Pa + &
+                ( -7.10542454D-07 ) * Ta*Ta*va*va*D_Tmrt*Pa + &
+                ( -1.24382300D-05 ) * va*va*va*D_Tmrt*Pa + &
+                ( -7.38584400D-09 ) * Ta*va*va*va*D_Tmrt*Pa + &
+                ( 2.20609296D-07 ) * va*va*va*va*D_Tmrt*Pa + &
+                ( -7.32469180D-04 ) * D_Tmrt*D_Tmrt*Pa + &
+                ( -1.87381964D-05 ) * Ta*D_Tmrt*D_Tmrt*Pa + &
+                ( 4.80925239D-06 ) * Ta*Ta*D_Tmrt*D_Tmrt*Pa + &
+                ( -8.75492040D-08 ) * Ta*Ta*Ta*D_Tmrt*D_Tmrt*Pa + &
+                ( 2.77862930D-05 ) * va*D_Tmrt*D_Tmrt*Pa + &
+                ( -5.06004592D-06 ) * Ta*va*D_Tmrt*D_Tmrt*Pa + &
+                ( 1.14325367D-07 ) * Ta*Ta*va*D_Tmrt*D_Tmrt*Pa + &
+                ( 2.53016723D-06 ) * va*va*D_Tmrt*D_Tmrt*Pa + &
+                ( -1.72857035D-08 ) * Ta*va*va*D_Tmrt*D_Tmrt*Pa + &
+                ( -3.95079398D-08 ) * va*va*va*D_Tmrt*D_Tmrt*Pa + &
+                ( -3.59413173D-07 ) * D_Tmrt*D_Tmrt*D_Tmrt*Pa + &
+                ( 7.04388046D-07 ) * Ta*D_Tmrt*D_Tmrt*D_Tmrt*Pa + &
+                ( -1.89309167D-08 ) * Ta*Ta*D_Tmrt*D_Tmrt*D_Tmrt*Pa + &
+                ( -4.79768731D-07 ) * va*D_Tmrt*D_Tmrt*D_Tmrt*Pa + &
+                ( 7.96079978D-09 ) * Ta*va*D_Tmrt*D_Tmrt*D_Tmrt*Pa + &
+                ( 1.62897058D-09 ) * va*va*D_Tmrt*D_Tmrt*D_Tmrt*Pa + &
+                ( 3.94367674D-08 ) * D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt*Pa + &
+                ( -1.18566247D-09 ) * Ta*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt*Pa + &
+                ( 3.34678041D-10 ) * va*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt*Pa + &
+                ( -1.15606447D-10 ) * D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt*Pa + &
+                ( -2.80626406D+00 ) * Pa*Pa + &
+                ( 5.48712484D-01 ) * Ta*Pa*Pa + &
+                ( -3.99428410D-03 ) * Ta*Ta*Pa*Pa + &
+                ( -9.54009191D-04 ) * Ta*Ta*Ta*Pa*Pa + &
+                ( 1.93090978D-05 ) * Ta*Ta*Ta*Ta*Pa*Pa + &
+                ( -3.08806365D-01 ) * va*Pa*Pa + &
+                ( 1.16952364D-02 ) * Ta*va*Pa*Pa + &
+                ( 4.95271903D-04 ) * Ta*Ta*va*Pa*Pa + &
+                ( -1.90710882D-05 ) * Ta*Ta*Ta*va*Pa*Pa + &
+                ( 2.10787756D-03 ) * va*va*Pa*Pa + &
+                ( -6.98445738D-04 ) * Ta*va*va*Pa*Pa + &
+                ( 2.30109073D-05 ) * Ta*Ta*va*va*Pa*Pa + &
+                ( 4.17856590D-04 ) * va*va*va*Pa*Pa + &
+                ( -1.27043871D-05 ) * Ta*va*va*va*Pa*Pa + &
+                ( -3.04620472D-06 ) * va*va*va*va*Pa*Pa + &
+                ( 5.14507424D-02 ) * D_Tmrt*Pa*Pa + &
+                ( -4.32510997D-03 ) * Ta*D_Tmrt*Pa*Pa + &
+                ( 8.99281156D-05 ) * Ta*Ta*D_Tmrt*Pa*Pa + &
+                ( -7.14663943D-07 ) * Ta*Ta*Ta*D_Tmrt*Pa*Pa + &
+                ( -2.66016305D-04 ) * va*D_Tmrt*Pa*Pa + &
+                ( 2.63789586D-04 ) * Ta*va*D_Tmrt*Pa*Pa + &
+                ( -7.01199003D-06 ) * Ta*Ta*va*D_Tmrt*Pa*Pa + &
+                ( -1.06823306D-04 ) * va*va*D_Tmrt*Pa*Pa + &
+                ( 3.61341136D-06 ) * Ta*va*va*D_Tmrt*Pa*Pa + &
+                ( 2.29748967D-07 ) * va*va*va*D_Tmrt*Pa*Pa + &
+                ( 3.04788893D-04 ) * D_Tmrt*D_Tmrt*Pa*Pa + &
+                ( -6.42070836D-05 ) * Ta*D_Tmrt*D_Tmrt*Pa*Pa + &
+                ( 1.16257971D-06 ) * Ta*Ta*D_Tmrt*D_Tmrt*Pa*Pa + &
+                ( 7.68023384D-06 ) * va*D_Tmrt*D_Tmrt*Pa*Pa + &
+                ( -5.47446896D-07 ) * Ta*va*D_Tmrt*D_Tmrt*Pa*Pa + &
+                ( -3.59937910D-08 ) * va*va*D_Tmrt*D_Tmrt*Pa*Pa + &
+                ( -4.36497725D-06 ) * D_Tmrt*D_Tmrt*D_Tmrt*Pa*Pa + &
+                ( 1.68737969D-07 ) * Ta*D_Tmrt*D_Tmrt*D_Tmrt*Pa*Pa + &
+                ( 2.67489271D-08 ) * va*D_Tmrt*D_Tmrt*D_Tmrt*Pa*Pa + &
+                ( 3.23926897D-09 ) * D_Tmrt*D_Tmrt*D_Tmrt*D_Tmrt*Pa*Pa + &
+                ( -3.53874123D-02 ) * Pa*Pa*Pa + &
+                ( -2.21201190D-01 ) * Ta*Pa*Pa*Pa + &
+                ( 1.55126038D-02 ) * Ta*Ta*Pa*Pa*Pa + &
+                ( -2.63917279D-04 ) * Ta*Ta*Ta*Pa*Pa*Pa + &
+                ( 4.53433455D-02 ) * va*Pa*Pa*Pa + &
+                ( -4.32943862D-03 ) * Ta*va*Pa*Pa*Pa + &
+                ( 1.45389826D-04 ) * Ta*Ta*va*Pa*Pa*Pa + &
+                ( 2.17508610D-04 ) * va*va*Pa*Pa*Pa + &
+                ( -6.66724702D-05 ) * Ta*va*va*Pa*Pa*Pa + &
+                ( 3.33217140D-05 ) * va*va*va*Pa*Pa*Pa + &
+                ( -2.26921615D-03 ) * D_Tmrt*Pa*Pa*Pa + &
+                ( 3.80261982D-04 ) * Ta*D_Tmrt*Pa*Pa*Pa + &
+                ( -5.45314314D-09 ) * Ta*Ta*D_Tmrt*Pa*Pa*Pa + &
+                ( -7.96355448D-04 ) * va*D_Tmrt*Pa*Pa*Pa + &
+                ( 2.53458034D-05 ) * Ta*va*D_Tmrt*Pa*Pa*Pa + &
+                ( -6.31223658D-06 ) * va*va*D_Tmrt*Pa*Pa*Pa + &
+                ( 3.02122035D-04 ) * D_Tmrt*D_Tmrt*Pa*Pa*Pa + &
+                ( -4.77403547D-06 ) * Ta*D_Tmrt*D_Tmrt*Pa*Pa*Pa + &
+                ( 1.73825715D-06 ) * va*D_Tmrt*D_Tmrt*Pa*Pa*Pa + &
+                ( -4.09087898D-07 ) * D_Tmrt*D_Tmrt*D_Tmrt*Pa*Pa*Pa + &
+                ( 6.14155345D-01 ) * Pa*Pa*Pa*Pa + &
+                ( -6.16755931D-02 ) * Ta*Pa*Pa*Pa*Pa + &
+                ( 1.33374846D-03 ) * Ta*Ta*Pa*Pa*Pa*Pa + &
+                ( 3.55375387D-03 ) * va*Pa*Pa*Pa*Pa + &
+                ( -5.13027851D-04 ) * Ta*va*Pa*Pa*Pa*Pa + &
+                ( 1.02449757D-04 ) * va*va*Pa*Pa*Pa*Pa + &
+                ( -1.48526421D-03 ) * D_Tmrt*Pa*Pa*Pa*Pa + &
+                ( -4.11469183D-05 ) * Ta*D_Tmrt*Pa*Pa*Pa*Pa + &
+                ( -6.80434415D-06 ) * va*D_Tmrt*Pa*Pa*Pa*Pa + &
+                ( -9.77675906D-06 ) * D_Tmrt*D_Tmrt*Pa*Pa*Pa*Pa + &
+                ( 8.82773108D-02 ) * Pa*Pa*Pa*Pa*Pa + &
+                ( -3.01859306D-03 ) * Ta*Pa*Pa*Pa*Pa*Pa + &
+                ( 1.04452989D-03 ) * va*Pa*Pa*Pa*Pa*Pa + &
+                ( 2.47090539D-04 ) * D_Tmrt*Pa*Pa*Pa*Pa*Pa + &
+                ( 1.48348065D-03 ) * Pa*Pa*Pa*Pa*Pa*Pa
+      return
+      END subroutine utci_approx_calc
+
+
+!~ **********************************************
+       subroutine es_calc(ta,es)
+!~ **********************************************
+!~ calculates saturation vapour pressure over water in hPa for input air
+!temperature (ta) in celsius according to:
+!~ Hardy, R.; ITS-90 Formulations for Vapor Pressure, Frostpoint Temperature,
+!Dewpoint Temperature and Enhancement Factors in the Range -100 to 100 °C;
+!~ Proceedings of Third International Symposium on Humidity and Moisture; edited
+!by National Physical Laboratory (NPL), London, 1998, pp. 214-221
+!~ http://www.thunderscientific.com/tech_info/reflibrary/its90formulas.pdf
+!(retrieved 2008-10-01)
+
+      implicit none
+!
+      real ta, tk,es
+      INTEGER I
+      REAL :: g(0:7)=(/&
+                                -2.8365744E3,&
+                                -6.028076559E3,&
+                                1.954263612E1,&
+                                -2.737830188E-2,&
+                                1.6261698E-5,&
+                                7.0229056E-10,&
+                                -1.8680009E-13,&
+                                2.7150305 /)
+!
+      tk=ta+273.15              ! air temp in K
+      es=g(7)*log(tk)
+      do i=0,6
+        es=es+g(i)*tk**(i-2)
+      end do
+      es=exp(es)*0.01   ! *0.01: convert Pa to hPa
+!
+      return
+      END subroutine es_calc
+! WRF COMFORT end
+
+
+subroutine interp_soil_temp(n_bb,dz,t,nsoil,dz_soil,tsoil,tsk)
+
+implicit none
+integer n_bb,nsoil
+real dz(n_bb),z(n_bb),z_s(n_bb),t(n_bb)          ! Layer sizes in the green roof
+real dz_soil(nsoil),zs_soil(nsoil),tsoil(nsoil),tsk
+real z_soil_old(nsoil),z_soil(nsoil+1),newt(nsoil+1)
+integer K
+
+zs_soil(1) =dz_soil(1)
+z_soil_old(1)=dz_soil(1)/2.
+    DO K = 2, nsoil
+       zs_soil(K) = dz_soil(K) + zs_soil(K-1)
+       z_soil_old(K)=zs_soil(K)-dz_soil(K)/2.
+    END DO
+
+newt(1)=tsk
+z_soil(1)=0.
+DO K = 2,nsoil+1
+z_soil(K) = z_soil_old(K-1)
+newt(k)=tsoil(k-1)
+END DO
+
+
+
+
+dz=dz(n_bb:1:-1)
+z_s(1)=dz(1)
+z(1)=dz(1)/2.
+DO K = 2, n_bb
+       z_s(K) = dz(K) + z_s(K-1)
+       z(K)=z_s(K)-dz(K)/2.
+END DO
+
+
+call regridding_lineare_1d(z_soil,newt,nsoil+1,z,t,n_bb)
+t=t(n_bb:1:-1)
+return
+end subroutine interp_soil_temp
+
+ subroutine regridding_lineare_1d(x_coarse, y_coarse, n_coarse, x_fine, y_regridded, n_fine)
+    implicit none
+    real, intent(in) :: x_coarse(:), y_coarse(:) ! Griglia meno risoluta
+    integer, intent(in) :: n_coarse                      ! Lunghezza della griglia meno risoluta
+    real, intent(in) :: x_fine(:)                ! Griglia più risoluta
+    real, intent(out) :: y_regridded(:)           ! Risultato del regridding
+    integer, intent(in) :: n_fine                        ! Lunghezza della griglia più risoluta
+
+    integer :: i, j, idx1, idx2
+    real(kind=8) :: weight1, weight2
+    ! Esegui il regridding lineare per ogni punto in x_fine
+    do i = 1, n_fine
+      ! Trova gli indici dei punti adiacenti nella griglia meno risoluta
+      call find_index(x_coarse, n_coarse, x_fine(i), idx1, idx2)
+
+      ! Calcola i pesi per l'interpolazione lineare
+      weight2 = (x_fine(i) - x_coarse(idx1)) / (x_coarse(idx2) - x_coarse(idx1))
+      weight1 = 1.0 - weight2
+
+      ! Esegui l'interpolazione lineare
+      y_regridded(i) = weight1 * y_coarse(idx1) + weight2 * y_coarse(idx2)
+    end do
+  return
+  end subroutine regridding_lineare_1d
+  subroutine find_index(x_coarse, n_coarse, x_interp, idx1, idx2)
+    implicit none
+    real, intent(in) :: x_coarse(:)  ! Griglia meno risoluta
+    integer, intent(in) :: n_coarse           ! Lunghezza della griglia meno risoluta
+    real, intent(in) :: x_interp      ! Punto di interpolazione
+    integer, intent(out) :: idx1, idx2        ! Indici dei punti adiacenti
+
+    integer :: i
+    ! Trova gli indici dei punti adiacenti per l'interpolazione
+    do i = 1, n_coarse - 1
+      if (x_coarse(i) <= x_interp .and. x_interp <= x_coarse(i + 1)) then
+        idx1 = i
+        idx2 = i + 1
+        return
+      end if
+    end do
+
+    ! Se x_interp è oltre l'ultima posizione nella griglia, utilizza l'ultimo intervallo
+    idx1 = n_coarse - 1
+    idx2 = n_coarse
+    return
+  end subroutine find_index
+
 END MODULE module_sf_bep_bem
+
 ! ===6=8===============================================================72
 ! ===6=8===============================================================72
 
@@ -6022,3 +8176,9 @@ END MODULE module_sf_bep_bem
          INTEGER :: bep_bem_val_ngr_u
          bep_bem_val_ngr_u = ngr_u
       END FUNCTION bep_bem_ngr_u
+FUNCTION bep_bem_ncomf () RESULT (bep_bem_val_ncomf)
+         USE module_sf_bep_bem
+         IMPLICIT NONE
+         INTEGER :: bep_bem_val_ncomf
+         bep_bem_val_ncomf = ncomf
+      END FUNCTION bep_bem_ncomf
